@@ -1,0 +1,18 @@
+{
+  "id": "./",
+  "name": "English Train",
+  "short_name": "English Train",
+  "description": "A little English, every ride. Offline English practice with Amharic help.",
+  "lang": "en",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F7F5F1",
+  "theme_color": "#B0342A",
+  "icons": [
+    {"src":"icons/icon-180.png","sizes":"180x180","type":"image/png"},
+    {"src":"icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},
+    {"src":"icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"}
+  ]
+}
