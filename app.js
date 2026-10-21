@@ -33,7 +33,7 @@
     return a===b ? 'exact' : b.length>=6 && distance(a,b)===1 ? 'almost' : 'wrong';
   }
   function defaults() {
-    return {version:1,xp:0,settings:{goal:1,am:true,sound:true},onboarded:false,cards:{},stops:{},seenStops:[],days:{},rides:0,seconds:0,streak:0,bestStreak:0,shields:2,lastRide:null,shieldThrough:null,streakMilestone:0,stamps:[],speedBest:0,commute:{quiet:false,silent:false,until:0},active:null,result:null,speed:null,levelSeen:0,notice:null};
+    return {version:1,xp:0,settings:{goal:1,am:true,sound:true},onboarded:false,cards:{},stops:{},seenStops:[],days:{},rides:0,seconds:0,streak:0,bestStreak:0,shields:2,lastRide:null,shieldThrough:null,streakMilestone:0,stamps:[],speedBest:0,commute:{quiet:false,silent:false,until:0},active:null,result:null,speed:null,levelSeen:0,notice:null,puzzles:0,answers:{right:0,wrong:0},log:[]};
   }
   function validDate(key) {return typeof key==='string' && /^\d{4}-\d{2}-\d{2}$/.test(key) && Number.isFinite(ordinal(key)) && shiftDate(key,0)===key;}
   function validQuestion(q) {
@@ -70,18 +70,23 @@
     s.onboarded=raw.onboarded===true;
     for(const [id,c] of Object.entries(raw.cards || {})) if(C.cards[id] && c && typeof c==='object') {
       s.cards[id]={box:Math.max(1,Math.floor(num(c.box,5))),due:num(c.due,9e12),known:c.known===true||num(c.box)>=2};
+      if(c.miss)s.cards[id].miss=Math.floor(num(c.miss,1e6));
     }
+    s.puzzles=Math.floor(num(raw.puzzles));
+    s.answers={right:Math.floor(num(raw.answers?.right)),wrong:Math.floor(num(raw.answers?.wrong))};
+    s.log=Array.isArray(raw.log)?raw.log.filter(e=>e&&validDate(e.d)&&['ride','free','review','guide','puzzle'].includes(e.type)).slice(-500).map(e=>({d:e.d,type:e.type,topic:typeof e.topic==='string'?e.topic.slice(0,40):'',seconds:num(e.seconds,86400),right:num(e.right,1e4),wrong:num(e.wrong,1e4)})):[];
     for(const [id,stars] of Object.entries(raw.stops || {})) if(stopById[id]) s.stops[id]=Math.max(1,Math.floor(num(stars,3)));
     s.seenStops=Array.isArray(raw.seenStops)?raw.seenStops.filter(id=>stopById[id]):[];
     for(const [d,v] of Object.entries(raw.days || {})) if(validDate(d)&&v&&typeof v==='object') s.days[d]={xp:num(v.xp),rides:num(v.rides),seconds:num(v.seconds)};
     for(const k of ['lastRide','shieldThrough']) s[k]=validDate(raw[k])?raw[k]:null;
     s.stamps=Array.isArray(raw.stamps)?[...new Set(raw.stamps.filter(n=>stampList.some(([id])=>id===n)))]:[];
     s.commute={quiet:raw.commute?.quiet===true,silent:raw.commute?.silent===true,until:num(raw.commute?.until,9e12)};
-    if(raw.active && (stopById[raw.active.stopId]||['review','guide'].includes(raw.active.stopId)) && Array.isArray(raw.active.queue) && raw.active.queue.length>0 && raw.active.queue.length<=2000 && raw.active.queue.every(validQuestion)) {
+    if(raw.active && (stopById[raw.active.stopId]||['review','guide','free'].includes(raw.active.stopId)) && Array.isArray(raw.active.queue) && raw.active.queue.length>0 && raw.active.queue.length<=2000 && raw.active.queue.every(validQuestion)) {
       const r=raw.active;
       s.active={stopId:r.stopId,name:typeof r.name==='string'?r.name.slice(0,500):'Your ride',queue:r.queue.map(cleanQuestion),double:r.double===true,index:Math.floor(num(r.index,r.queue.length)),xp:num(r.xp),mistakes:num(r.mistakes),correct:num(r.correct),combo:num(r.combo),seconds:num(r.seconds),baseCount:num(r.baseCount,100)||8,knownBefore:num(r.knownBefore),phase:r.phase==='intro'?'intro':'questions',feedback:r.feedback&&typeof r.feedback==='object'?{ok:r.feedback.ok===true,message:String(r.feedback.message||'').slice(0,5000),am:String(r.feedback.am||'').slice(0,5000)}:null};
       s.active.cardIds=Array.isArray(r.cardIds)?r.cardIds.filter(id=>C.cards[id]):[];
       s.active.quiet=r.quiet===true;s.active.silent=r.silent===true;
+      if(r.free&&C.lines.some(l=>l.id===r.free.lineId))s.active.free={lineId:r.free.lineId,limit:[0,300,600].includes(r.free.limit)?r.free.limit:0};
       const d=r.draft&&typeof r.draft==='object'?r.draft:{},q=s.active.queue[s.active.index];
       s.active.draft={typed:typeof d.typed==='string'?d.typed.slice(0,5000):'',selected:Number.isInteger(d.selected)?d.selected:null,fallback:d.fallback===true,hadWrong:d.hadWrong===true,matchStarted:num(d.matchStarted),pairMessage:typeof d.pairMessage==='string'?d.pairMessage.slice(0,5000):''};
       if(q?.t==='build')s.active.draft.chosen=Array.isArray(d.chosen)?[...new Set(d.chosen.filter(i=>Number.isInteger(i)&&i>=0&&i<q.bank.length))]:[];
@@ -92,7 +97,7 @@
     }
     if(raw.result && typeof raw.result==='object' && typeof raw.result.name==='string') {
       const r=raw.result, reward=r.reward;
-      if(reward && ['xp','shield','stamp'].includes(reward.type)) s.result={name:r.name.slice(0,500),xp:num(r.xp),stars:Math.max(1,num(r.stars,3)),words:num(r.words),seconds:num(r.seconds),correct:num(r.correct),previousDay:num(r.previousDay),open:r.open===true,speedAvailable:r.speedAvailable===true,reward:{type:reward.type,amount:Math.max(10,num(reward.amount,30)),stamp:stampList.some(([id])=>id===reward.stamp)?reward.stamp:'Boston'}};
+      if(reward && ['xp','shield','stamp'].includes(reward.type)) s.result={free:r.free===true,name:r.name.slice(0,500),xp:num(r.xp),stars:Math.max(1,num(r.stars,3)),words:num(r.words),seconds:num(r.seconds),correct:num(r.correct),previousDay:num(r.previousDay),open:r.open===true,speedAvailable:r.speedAvailable===true,reward:{type:reward.type,amount:Math.max(10,num(reward.amount,30)),stamp:stampList.some(([id])=>id===reward.stamp)?reward.stamp:'Boston'}};
     }
     if(raw.speed && typeof raw.speed==='object' && validQuestion(raw.speed.question)) s.speed={endAt:num(raw.speed.endAt,9e12),score:num(raw.speed.score),answered:num(raw.speed.answered),previousBest:num(raw.speed.previousBest),question:cleanQuestion(raw.speed.question),finished:raw.speed.finished===true};
     return s;
@@ -101,6 +106,7 @@
     if(!C.cards[id]) return;
     const c=s.cards[id] || {box:1,due:now,known:false};
     c.box=correct?Math.min(5,c.box+1):1;
+    if(!correct)c.miss=(c.miss||0)+1;
     c.known=c.known||c.box>=2;
     c.due=now+INTERVALS[c.box]*DAY;
     s.cards[id]=c;
@@ -144,7 +150,7 @@
   const bilingual=(en,translation)=>`${esc(en)}${am(translation)}`;
   const btn=(label,action,classes='',extra='')=>`<button class="${classes}" data-action="${action}" ${extra}>${label}</button>`;
   const primary=(label,action,extra='')=>btn(label,action,'button primary',extra);
-  let S, storageFailed=false, currentTab='map', screen='main', selectedStop=null, onboardingStep=0;
+  let S, storageFailed=false, currentTab='home', screen='main', selectedStop=null, onboardingStep=0, freeTopic=null, freeLimit=0, puzzle=null;
   let timer=null,lastTick=Date.now(),voice=null,audioContext=null,recorder=null,micStream=null,recordingURL=null,recordingAudio=null,recordingChunks=[],micTimer=null,recordingBusy=false,micGeneration=0;
   let toastTimer=null, levelReturn=null;
   try {const stored=localStorage.getItem(KEY);S=stored?validate(JSON.parse(stored)):defaults();}
@@ -156,6 +162,12 @@
     catch (_) {storageFailed=true;}
   }
   save();
+  const clock=s=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+  function logSession(type,topic,seconds,right,wrong){S.log.push({d:dateKey(),type,topic,seconds:Math.round(seconds),right,wrong});if(S.log.length>500)S.log.splice(0,S.log.length-500);}
+  // Her voice recordings stay on this phone (IndexedDB), labeled with the sentence and date.
+  function voiceTx(mode,fn){return new Promise((ok,no)=>{const q=indexedDB.open('english-train-voice',1);q.onupgradeneeded=()=>q.result.createObjectStore('clips',{keyPath:'id',autoIncrement:true});q.onerror=()=>no(q.error);q.onsuccess=()=>{const db=q.result,t=db.transaction('clips',mode),req=fn(t.objectStore('clips'));t.oncomplete=()=>{db.close();ok(req.result);};t.onerror=()=>{db.close();no(t.error);};};});}
+  function keepRecording(blob,q,stopId){if(globalThis.indexedDB)voiceTx('readwrite',s=>s.add({at:new Date().toISOString(),stopId,text:q?.en||'',blob})).catch(()=>{});}
+  function showVoiceCount(){const e=document.getElementById('voice-count');if(!e||!globalThis.indexedDB)return;voiceTx('readonly',s=>s.count()).then(n=>{e.textContent=`${n} voice recording${n===1?'':'s'} saved on this phone.`;}).catch(()=>{e.textContent='Voice recordings could not be read on this phone.';});}
   function toast(text) {
     const e=document.getElementById('toast');e.textContent=text;e.hidden=false;
     clearTimeout(toastTimer);toastTimer=setTimeout(()=>e.hidden=true,4200);
@@ -174,7 +186,7 @@
     try {
       speechSynthesis.cancel();pickVoice();
       const u=new SpeechSynthesisUtterance(text);u.lang='en-US';if(voice)u.voice=voice;u.rate=slow?0.6:0.9;
-      u.onerror=()=>toast('Voice unavailable offline? Choose “Can’t listen now” to use reading.');
+      u.onerror=e=>{if(!["interrupted","canceled"].includes(e?.error))toast('Voice unavailable offline? Choose “Can’t listen now” to use reading.');};
       if(button){button.classList.add('speaking');u.onend=()=>button.classList.remove('speaking');}
       speechSynthesis.speak(u);
     } catch (_) {toast('Try the reading option for this ride.');}
@@ -206,7 +218,7 @@
   function top(title,back=null) {
     return `<header class="app-header"><div class="header-inner">${back?btn('←',back,'icon-button','aria-label="Back"'):'<div class="brand-mark" aria-hidden="true">🚆</div>'}<div class="brand"><strong>${esc(title)}</strong><span>${back?'ONE SMALL STEP, EVERY RIDE':'ENGLISH, ONE STOP AT A TIME'}</span></div><div class="xp-pill">✦ ${Math.floor(S.xp+(S.active?.xp||0))}<small> XP</small></div></div></header>`;
   }
-  function tabs(){return `<nav class="tab-bar" aria-label="Main navigation">${[['map','🚆','Map'],['words','📖','My Words'],['passport','🛂','Passport'],['me','👤','Me']].map(([id,icon,label])=>btn(`<span aria-hidden="true">${icon}</span><span>${label}</span>`,'tab','tab'+(currentTab===id?' selected':''),`data-tab="${id}" ${currentTab===id?'aria-current="page"':''}`)).join('')}</nav>`;}
+  function tabs(){return `<nav class="tab-bar" aria-label="Main navigation">${[['home','🏠','Home'],['map','🚆','Train'],['words','📖','Words'],['passport','🛂','Passport'],['me','👤','Me']].map(([id,icon,label])=>btn(`<span aria-hidden="true">${icon}</span><span>${label}</span>`,'tab','tab'+(currentTab===id?' selected':''),`data-tab="${id}" ${currentTab===id?'aria-current="page"':''}`)).join('')}</nav>`;}
   let dockObserver=null;
   function layout(content,title='English Train',back=null,{footer='',nav=true,mode=''}={}) {
     dockObserver?.disconnect();
@@ -220,7 +232,25 @@
   const daily=()=>S.days[dateKey()]||{rides:0,xp:0,seconds:0};
   const currentStop=()=>stopList.find(s=>!S.stops[s.id])||stopList[stopList.length-1];
   function unlocked(id){const i=stopList.findIndex(s=>s.id===id);return i===0||!!S.stops[stopList[i-1]?.id]||!!S.stops[id];}
-  function renderHome() {
+  function noticeHtml(){
+    const n=S.notice==='shield'?bilingual('Your shield saved your streak! 🛡️','የቀን ተከታታይነትሽ ተጠብቋል።'):S.notice==='welcome'?bilingual("Welcome back! Let’s start a new streak.",'እንኳን ደህና መጣሽ! እንደገና እንጀምር።'):'';
+    let html=n?`<div class="notice">${n}</div>`:'';
+    if(storageFailed)html+=`<div class="notice">Progress can’t be saved on this device. ${btn('Save a progress code →','settings','text-button')}</div>`;
+    if(S.result)html+=primary('🎁 Your reward is waiting →','result');
+    if(S.speed && !S.speed.finished)html+=primary('⚡ Resume your speed round →','resume-speed');
+    return html;
+  }
+  function dailyCard(){const d=daily();return `<div class="daily-card"><div class="goal-ring" style="--progress:${Math.min(1,d.rides/S.settings.goal)*360}deg"><div>${Math.min(d.rides,S.settings.goal)}<small>/ ${S.settings.goal}</small></div></div><div class="grow"><strong>${d.rides>=S.settings.goal?'Today? You did it.':'Your daily goal'}</strong><span>${d.rides>=S.settings.goal?'You can keep going.':`${S.settings.goal} ${S.settings.goal===1?'lesson':'lessons'} · about ${S.settings.goal*3} minutes`}</span></div><div class="streak-pill">🔥 ${S.streak}<small>day${S.streak===1?'':'s'}</small></div></div>`;}
+  function homeCard(icon,title,sub,amText,action,extra=''){return btn(`<span class="home-icon" aria-hidden="true">${icon}</span><strong>${esc(title)}</strong><small>${esc(sub)}</small>${am(amText)}`,action,'home-card',extra);}
+  function renderHome(){
+    screen='main';currentTab='home';const next=currentStop(),hour=new Date().getHours(),due=dueCards(S);
+    let html=`<section class="welcome"><div class="eyebrow">ENGLISH FOR YOUR DAY</div><h1>${hour<12?'Good morning.':hour<18?'Good afternoon.':'Good evening.'}</h1><p class="subtitle">${am('እንኳን ደህና መጣሽ።')}</p></section>`+dailyCard()+noticeHtml();
+    if(S.active)html+=`<div class="resume-card"><div><span class="eyebrow">SAVED FOR YOU</span><h3>${esc(S.active.name)}</h3><p>${S.active.index} answers practiced. Pick up here.</p>${am('ከቆምሽበት ቀጥዪ።')}</div>${primary('▶ Continue','resume')}</div>`;
+    html+=`<div class="home-grid">${homeCard('🚆','Train ride',`Next stop: ${next.name}`,'የባቡር ጉዞ','tab','data-tab="map"')}${homeCard('🌿','Free practice','Any topic, your pace','ነፃ ልምምድ','free')}${homeCard('🔎','Word search','Find your words','ቃል ፍለጋ','puzzle')}${homeCard('📈','My progress',`${wordCount(S)} words so far`,'እድገትሽ','progress')}</div>`;
+    if(due.length>=5)html+=btn(`<span class="express-icon">↗</span><span><strong>Review Express</strong><small>${due.length} cards ready · double XP${am('ቃላቱን ደግሚ።')}</small></span><span class="xp-tag">2×</span>`,'review','express-card');
+    layout(html);
+  }
+  function renderMap() {
     screen='main';currentTab='map';const d=daily(),next=currentStop(),line=C.lines.find(l=>l.id===next.lineId),due=dueCards(S),allDone=stopList.every(s=>S.stops[s.id]);
     const notices=S.notice==='shield'?bilingual('Your shield saved your streak! 🛡️','የቀን ተከታታይነትሽ ተጠብቋል።'):S.notice==='welcome'?bilingual("Welcome back! Let’s start a new streak.",'እንኳን ደህና መጣሽ! እንደገና እንጀምር።'):'';
     let html=`<section class="welcome"><div class="eyebrow">ENGLISH FOR YOUR DAY</div><h1>Every ride counts.</h1><p class="subtitle">${am('ደረጃ በደረጃ እንግሊዝኛ')}</p></section>`;
@@ -275,7 +305,80 @@
     screen='main';currentTab='me';const level=levelFor(S.xp),nextLevel=LEVELS[level+1],today=dateKey();
     const weekday=(new Date().getDay()+6)%7,weekStart=shiftDate(today,-weekday),lastStart=shiftDate(weekStart,-7),thisWeek=xpSum(weekStart,today),lastWeek=xpSum(lastStart,shiftDate(weekStart,-1)),maxWeek=Math.max(thisWeek,lastWeek,1);
     const days=Array.from({length:7},(_,i)=>shiftDate(today,i-6)),maxXP=Math.max(1,...days.map(d=>S.days[d]?.xp||0));
-    layout(`<section class="page-intro me-intro"><div><span class="eyebrow">LOOK HOW FAR YOU’VE COME</span><h1>This is<br><em>your journey.</em></h1></div>${btn('⚙️','settings','icon-button','aria-label="Settings"')}</section><section class="level-card"><div class="level-icon">${LEVELS[level][2]}</div><div class="grow"><span class="eyebrow">LEVEL ${level+1}</span><h2>${LEVELS[level][1]}</h2><p>${Math.floor(S.xp)} XP ${nextLevel?`· ${nextLevel[0]-S.xp} to ${nextLevel[1]}`:'· You’re a City Guide!'}</p><div class="band"><i style="width:${nextLevel?(S.xp-LEVELS[level][0])/(nextLevel[0]-LEVELS[level][0])*100:100}%"></i></div></div></section><div class="stats-grid">${[[wordCount(S),'words you know','🌱'],[S.rides,'rides completed','🚆'],[Math.floor(S.seconds/60),'minutes learned','⏱'],[S.bestStreak,'best streak','🔥']].map(([n,l,i])=>`<div class="stat"><span>${i}</span><strong>${n}</strong><small>${l}</small></div>`).join('')}</div><section class="panel"><h2>Your last 7 days</h2><p class="muted">Every bar is time you gave yourself.</p><div class="xp-chart" role="img" aria-label="Daily XP: ${days.map(d=>`${d}: ${S.days[d]?.xp||0}`).join(', ')}">${days.map(d=>`<div class="chart-day"><small>${S.days[d]?.xp||0}</small><div class="chart-track"><i style="height:${Math.max(2,(S.days[d]?.xp||0)/maxXP*100)}%"></i></div><span>${new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'narrow'})}</span></div>`).join('')}</div></section><section class="panel"><span class="eyebrow">YOUR PERSONAL LEAGUE</span><h2>You vs. you.</h2><div class="league-row"><span>This week</span><strong>${thisWeek} XP</strong></div><div class="league-track"><i style="width:${thisWeek/maxWeek*100}%"></i></div><div class="league-row"><span>Last week</span><strong>${lastWeek} XP</strong></div><div class="league-track previous"><i style="width:${lastWeek/maxWeek*100}%"></i></div><p>${thisWeek>lastWeek?'You’re ahead of last week. Look at you go!':'Practice today is a win.'}</p>${am('እንግሊዝኛሽ እየተሻሻለ ነው።')}</section><div class="panel shield-panel"><span>🛡️</span><div><strong>${S.shields} / 3 streak shields</strong><p>For the days life gets busy. Your first ride each day keeps your streak going.</p></div></div><div class="panel"><strong>⚡ Speed round best: ${S.speedBest}</strong><p class="muted">A 45-second bonus every third ride.</p></div>${btn('⚙️ Settings & save my progress','settings','button secondary')}`,'Me');
+    layout(`<section class="page-intro me-intro"><div><span class="eyebrow">LOOK HOW FAR YOU’VE COME</span><h1>This is<br><em>your journey.</em></h1></div>${btn('⚙️','settings','icon-button','aria-label="Settings"')}</section><section class="level-card"><div class="level-icon">${LEVELS[level][2]}</div><div class="grow"><span class="eyebrow">LEVEL ${level+1}</span><h2>${LEVELS[level][1]}</h2><p>${Math.floor(S.xp)} XP ${nextLevel?`· ${nextLevel[0]-S.xp} to ${nextLevel[1]}`:'· You’re a City Guide!'}</p><div class="band"><i style="width:${nextLevel?(S.xp-LEVELS[level][0])/(nextLevel[0]-LEVELS[level][0])*100:100}%"></i></div></div></section><div class="stats-grid">${[[wordCount(S),'words you know','🌱'],[S.rides,'rides completed','🚆'],[Math.floor(S.seconds/60),'minutes learned','⏱'],[S.bestStreak,'best streak','🔥']].map(([n,l,i])=>`<div class="stat"><span>${i}</span><strong>${n}</strong><small>${l}</small></div>`).join('')}</div><section class="panel"><h2>Your last 7 days</h2><p class="muted">Every bar is time you gave yourself.</p><div class="xp-chart" role="img" aria-label="Daily XP: ${days.map(d=>`${d}: ${S.days[d]?.xp||0}`).join(', ')}">${days.map(d=>`<div class="chart-day"><small>${S.days[d]?.xp||0}</small><div class="chart-track"><i style="height:${Math.max(2,(S.days[d]?.xp||0)/maxXP*100)}%"></i></div><span>${new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'narrow'})}</span></div>`).join('')}</div></section><section class="panel"><span class="eyebrow">YOUR PERSONAL LEAGUE</span><h2>You vs. you.</h2><div class="league-row"><span>This week</span><strong>${thisWeek} XP</strong></div><div class="league-track"><i style="width:${thisWeek/maxWeek*100}%"></i></div><div class="league-row"><span>Last week</span><strong>${lastWeek} XP</strong></div><div class="league-track previous"><i style="width:${lastWeek/maxWeek*100}%"></i></div><p>${thisWeek>lastWeek?'You’re ahead of last week. Look at you go!':'Practice today is a win.'}</p>${am('እንግሊዝኛሽ እየተሻሻለ ነው።')}</section><div class="panel shield-panel"><span>🛡️</span><div><strong>${S.shields} / 3 streak shields</strong><p>For the days life gets busy. Your first ride each day keeps your streak going.</p></div></div><div class="panel"><strong>⚡ Speed round best: ${S.speedBest}</strong><p class="muted">A 45-second bonus every third ride.</p></div>${btn('📈 My full progress','progress','button secondary')}${btn('⚙️ Settings & save my progress','settings','button secondary')}`,'Me');
+  }
+  function renderFreeSetup(){
+    screen='free-setup';
+    const topics=C.lines.map(l=>btn(`<span aria-hidden="true">${l.icon}</span><span class="grow"><strong>${esc(l.title)}</strong>${am(l.am)}</span>`,'free-topic','free-topic'+(freeTopic===l.id?' chosen':''),`data-line="${l.id}" aria-pressed="${freeTopic===l.id}"`)).join('');
+    const times=[[0,'No timer'],[300,'5 min'],[600,'10 min']].map(([n,label])=>btn(`<strong>${label}</strong>`,'free-time',freeLimit===n?'chosen':'',`data-limit="${n}" aria-pressed="${freeLimit===n}"`)).join('');
+    layout(`<section class="page-intro"><span class="eyebrow">FREE PRACTICE</span><h1>Practice<br><em>your way.</em></h1><p>Pick a topic. Practice as long as you like.</p>${am('ርዕስ ምረጪ።')}</section><section class="panel"><h2>Timer</h2><div class="goal-picker free-times">${times}</div></section><section class="panel"><h2>Topic</h2><div class="free-topics">${topics}</div></section>`,'Free practice','home',{nav:false,footer:primary('▶ Start practice','free-start',freeTopic?'':'disabled')});
+  }
+  function freeBatch(lineId){const l=C.lines.find(x=>x.id===lineId);return l?buildRide(l.stops[Math.floor(Math.random()*l.stops.length)],S):[];}
+  function startFree(){
+    if(S.active){toast('Your current lesson is saved. Finish it first.');return resumeRide();}
+    if(S.result){toast('Your last lesson has a reward waiting.');return renderResult();}
+    const l=C.lines.find(x=>x.id===freeTopic),queue=l?freeBatch(l.id):[];if(!queue.length)return;
+    S.active={stopId:'free',name:'Free practice: '+l.title,phase:'questions',queue,index:0,baseCount:100,xp:0,mistakes:0,correct:0,combo:0,seconds:0,knownBefore:wordCount(S),quiet:false,silent:false,feedback:null,draft:{},cardIds:[...new Set(queue.flatMap(q=>q.cardIds||[]))],double:false,free:{lineId:l.id,limit:freeLimit}};
+    save();lastTick=Date.now();renderRide();goTop();
+  }
+  function finishFree(){
+    const r=S.active;if(!r?.free)return;
+    if(!r.correct&&!r.mistakes){stopMedia();S.active=null;save();renderHome();return goTop();}
+    completeRide();
+  }
+  function puzzleWords(){
+    const seen=new Map();
+    for(const id of Object.keys(S.cards)){const w=C.cards[id];if(w?.kind!=='word')continue;const word=normalize(w.en).toUpperCase();if(/^[A-Z]{3,8}$/.test(word)&&!seen.has(word))seen.set(word,id);}
+    return shuffle([...seen.entries()]).sort((a,b)=>(S.cards[b[1]].known?1:0)-(S.cards[a[1]].known?1:0)).slice(0,7);
+  }
+  function makePuzzle(){
+    const size=9,grid=Array(size*size).fill(''),words=[],dirs=[[0,1],[1,0],[1,1]];
+    for(const [w,id] of puzzleWords()){
+      for(let tries=0;tries<150;tries++){
+        const [dr,dc]=dirs[Math.floor(Math.random()*dirs.length)],r0=Math.floor(Math.random()*(size-dr*(w.length-1))),c0=Math.floor(Math.random()*(size-dc*(w.length-1)));
+        const cells=[...w].map((_,i)=>(r0+dr*i)*size+c0+dc*i);
+        if(cells.every((c,i)=>!grid[c]||grid[c]===w[i])){cells.forEach((c,i)=>grid[c]=w[i]);words.push({w,id,cells,found:false});break;}
+      }
+    }
+    for(let i=0;i<grid.length;i++)if(!grid[i])grid[i]='ABCDEFGHIJKLMNOPRSTUW'[Math.floor(Math.random()*21)];
+    puzzle={size,grid,words,first:null,start:Date.now(),done:false};
+  }
+  function renderPuzzle(){
+    screen='puzzle';
+    if(!puzzle||puzzle.words.length<3){layout(`<div class="empty-state"><span>🔎</span><h2>Learn a few more words first.</h2><p>Word search uses the words you have learned. Take a lesson, then come back.</p>${am('መጀመሪያ ጥቂት ቃላት ተማሪ።')}${btn('🚆 Take a train ride','tab','button primary','data-tab="map"')}</div>`,'Word search','home',{nav:false});return;}
+    const p=puzzle,foundCells=new Set(p.words.filter(w=>w.found).flatMap(w=>w.cells));
+    const cells=p.grid.map((ch,i)=>btn(ch,'cell',`ws-cell${foundCells.has(i)?' found':''}${p.first===i?' first':''}`,`data-index="${i}" ${p.done?'disabled':''}`)).join('');
+    const list=p.words.map(w=>`<div class="ws-word${w.found?' found':''}"><strong>${w.found?esc(w.w):'?'.repeat(w.w.length)}</strong>${am(C.cards[w.id]?.am)}</div>`).join('');
+    const found=p.words.filter(w=>w.found).length;
+    layout(`<section class="page-intro"><span class="eyebrow">WORD SEARCH · ${found} / ${p.words.length}</span><h1>${p.done?'You found<br><em>them all!</em>':'Find your<br><em>words.</em>'}</h1><p>Tap the first letter, then the last letter. Use the Amharic hints.</p>${am('የመጀመሪያውን ፊደል ንኪ፣ ከዚያ የመጨረሻውን ፊደል ንኪ።')}</section><div class="ws-grid" style="--size:${p.size}">${cells}</div><div class="ws-words">${list}</div>`,'Word search','home',{nav:false,footer:p.done?primary('🔎 New puzzle','puzzle')+btn('Back home','home','button secondary'):'<p class="dock-note">Words go across, down, or diagonally.</p>'});
+  }
+  function tapCell(i){
+    const p=puzzle;if(!p||p.done||!p.grid[i])return;
+    if(p.first===null){p.first=i;return renderPuzzle();}
+    const a=p.first;p.first=null;
+    const hit=p.words.find(w=>!w.found&&((w.cells[0]===a&&w.cells.at(-1)===i)||(w.cells[0]===i&&w.cells.at(-1)===a)));
+    if(hit){hit.found=true;tone('correct');addXP(5);advanceCard(S,hit.id,true);speak(C.cards[hit.id].en);
+      if(p.words.every(w=>w.found)){p.done=true;const secs=Math.min(3600,(Date.now()-p.start)/1000),d=dateKey();addXP(10);S.puzzles++;S.seconds+=secs;S.days[d].seconds+=secs;logSession('puzzle','',secs,p.words.length,0);tone('fanfare');confetti();}
+      save();
+    } else if(a!==i)tone('wrong');
+    renderPuzzle();
+  }
+  function renderProgress(){
+    screen='progress';const today=dateKey(),days=Object.entries(S.days).filter(([,d])=>d.rides||d.seconds),totalAnswers=S.answers.right+S.answers.wrong;
+    const month=Array.from({length:28},(_,i)=>shiftDate(today,i-27)),maxSec=Math.max(60,...month.map(d=>S.days[d]?.seconds||0));
+    const boxes=[0,0,0,0,0];Object.values(S.cards).forEach(c=>boxes[Math.min(5,c.box)-1]++);const totalCards=Math.max(1,boxes.reduce((a,b)=>a+b,0));
+    const hard=Object.entries(S.cards).filter(([id,c])=>c.miss&&c.box<=2&&C.cards[id]).sort((a,b)=>b[1].miss-a[1].miss).slice(0,6);
+    const topics=C.lines.map(l=>{const ids=l.cardIds.filter(id=>C.cards[id].kind==='word'),known=ids.filter(id=>S.cards[id]?.known).length;return [l,known,ids.length];}).filter(([,k])=>k);
+    const names={ride:'Train ride',free:'Free practice',review:'Review',guide:'Pocket guide',puzzle:'Word search'};
+    const recent=S.log.slice(-10).reverse();
+    layout(`<section class="page-intro"><span class="eyebrow">MY PROGRESS</span><h1>Look how far<br><em>you’ve come.</em></h1>${am('እንግሊዝኛሽ እየተሻሻለ ነው።')}</section>
+<div class="stats-grid">${[[days.length,'days practiced','📅'],[Math.floor(S.seconds/60),'minutes learned','⏱'],[wordCount(S),'words you know','🌱'],[totalAnswers?Math.round(S.answers.right/totalAnswers*100)+'%':'–','answers right','🎯'],[S.rides,'lessons finished','🚆'],[S.puzzles,'word searches','🔎']].map(([n,l,i])=>`<div class="stat"><span>${i}</span><strong>${n}</strong><small>${l}</small></div>`).join('')}</div>
+<section class="panel"><h2>Last 4 weeks</h2><p class="muted">Greener days mean more minutes practiced.</p><div class="heatmap">${month.map(d=>{const s=S.days[d]?.seconds||0;return `<i title="${d}: ${Math.round(s/60)} min" style="--level:${s?Math.max(.2,s/maxSec):0}" class="${d===today?'today':''}"></i>`;}).join('')}</div></section>
+<section class="panel"><h2>How well you know your words</h2>${['New','Familiar','Growing','Strong','Mastered'].map((label,i)=>`<div class="league-row"><span>${label}</span><strong>${boxes[i]}</strong></div><div class="league-track"><i style="width:${boxes[i]/totalCards*100}%"></i></div>`).join('')}</section>
+${topics.length?`<section class="panel"><h2>Words by topic</h2>${topics.map(([l,k,n])=>`<div class="league-row"><span>${l.icon} ${esc(l.title)}</span><strong>${k} / ${n}</strong></div><div class="league-track"><i style="width:${k/n*100}%"></i></div>`).join('')}</section>`:''}
+${hard.length?`<section class="panel"><h2>Words to practice</h2><p class="muted">These were tricky. They will come back in your lessons.</p>${hard.map(([id])=>wordRow(id)).join('')}</section>`:''}
+<section class="panel"><h2>Recent practice</h2>${recent.length?recent.map(e=>`<div class="league-row"><span>${esc(e.d.slice(5))} · ${names[e.type]||e.type}</span><strong>${Math.max(1,Math.round(e.seconds/60))} min · ${e.right}✓ ${e.wrong}✗</strong></div>`).join(''):'<p class="muted">Your lessons will show up here.</p>'}<p class="muted" id="voice-count"></p></section>`,'My progress','home');
+    showVoiceCount();
   }
   function encodeState(s){const bytes=new TextEncoder().encode(JSON.stringify(s));let binary='';for(const b of bytes)binary+=String.fromCharCode(b);return btoa(binary);}
   function decodeState(code){
@@ -285,7 +388,8 @@
   }
   function renderSettings(){
     screen='settings';const code=encodeState(S);
-    layout(`<section class="page-intro"><span class="eyebrow">MAKE YOURSELF AT HOME</span><h1>Your<br><em>preferences.</em></h1></section><section class="panel"><h2>Daily goal</h2><p>Even one ride is enough.</p><div class="goal-picker">${[1,2,3].map(n=>btn(`<strong>${n}</strong><span>${n===1?'ride':'rides'}</span>`,'goal',S.settings.goal===n?'chosen':'',`data-goal="${n}" aria-pressed="${S.settings.goal===n}"`)).join('')}</div></section><section class="panel settings-list">${settingToggle('am','አማርኛ እርዳታ','Amharic helper text',S.settings.am)}${settingToggle('sound','Pleasant sounds','Chimes and celebrations',S.settings.sound)}</section><section class="panel"><h2>Save my progress</h2><p>Copy this code to Notes. It brings your progress back if your phone clears its storage.</p>${am('እድገትሽን ለማስቀመጥ ይህን ኮድ ቅጂ።')}<label for="backup">Your progress code</label><textarea id="backup" rows="3" readonly spellcheck="false">${code}</textarea>${primary('Copy progress code','copy')}<hr><label for="restore">Restore a saved progress code</label><textarea id="restore" rows="3" placeholder="Paste your saved code here…" spellcheck="false" autocapitalize="off"></textarea><p class="muted">Restore replaces this device’s current progress. Copy the code above first if you want to keep it.</p>${btn('Check progress code','restore-check','button secondary')}<div id="restore-preview" role="status"></div></section><section class="panel"><h2>Take it with you</h2><p>In Safari, tap Share <span aria-label="Share">⬆</span>, then <strong>Add to Home Screen</strong>. Open it once while online to save it for your next subway ride.</p>${am('በSafari ውስጥ Share ንኪ፣ ከዚያ Add to Home Screen ምረጪ።')}<p class="muted">${esc(offlineText())}</p><p class="muted">Microphone recordings stay in memory and disappear when you leave the question.</p></section>`,'Settings','me');
+    layout(`<section class="page-intro"><span class="eyebrow">MAKE YOURSELF AT HOME</span><h1>Your<br><em>preferences.</em></h1></section><section class="panel"><h2>Daily goal</h2><p>Even one ride is enough.</p><div class="goal-picker">${[1,2,3].map(n=>btn(`<strong>${n}</strong><span>${n===1?'ride':'rides'}</span>`,'goal',S.settings.goal===n?'chosen':'',`data-goal="${n}" aria-pressed="${S.settings.goal===n}"`)).join('')}</div></section><section class="panel settings-list">${settingToggle('am','አማርኛ እርዳታ','Amharic helper text',S.settings.am)}${settingToggle('sound','Pleasant sounds','Chimes and celebrations',S.settings.sound)}</section><section class="panel"><h2>Save my progress</h2><p>Copy this code to Notes. It brings your progress back if your phone clears its storage.</p>${am('እድገትሽን ለማስቀመጥ ይህን ኮድ ቅጂ።')}<label for="backup">Your progress code</label><textarea id="backup" rows="3" readonly spellcheck="false">${code}</textarea>${primary('Copy progress code','copy')}<hr><label for="restore">Restore a saved progress code</label><textarea id="restore" rows="3" placeholder="Paste your saved code here…" spellcheck="false" autocapitalize="off"></textarea><p class="muted">Restore replaces this device’s current progress. Copy the code above first if you want to keep it.</p>${btn('Check progress code','restore-check','button secondary')}<div id="restore-preview" role="status"></div></section><section class="panel"><h2>Take it with you</h2><p>In Safari, tap Share <span aria-label="Share">⬆</span>, then <strong>Add to Home Screen</strong>. Open it once while online to save it for your next subway ride.</p>${am('በSafari ውስጥ Share ንኪ፣ ከዚያ Add to Home Screen ምረጪ።')}<p class="muted">${esc(offlineText())}</p></section><section class="panel"><h2>My voice recordings</h2><p>When you record your voice, it is saved on this phone so you can hear how much you improve.</p>${am('የምትቀጂው ድምፅሽ በዚህ ስልክ ላይ ይቀመጣል።')}<p class="muted" id="voice-count"></p></section>`,'Settings','me');
+    showVoiceCount();
   }
   function settingToggle(key,title,sub,on){return `<div class="setting-row"><div><strong ${key==='am'?'lang="am" class="am"':''}>${esc(title)}</strong><small>${esc(sub)}</small></div>${btn(`<span></span>`, 'setting','switch',`role="switch" aria-checked="${on}" aria-label="${esc(title)}" data-setting="${key}"`)}</div>`;}
   function renderOnboarding(){
@@ -436,7 +540,8 @@
     if(S.active.index>=S.active.queue.length)return completeRide();
     renderRide();goTop();
   }
-  function lessonHeader(r){const pct=Math.min(100,r.index/r.queue.length*100);return `<header class="ride-bar">${btn('✕','pause','icon-button','aria-label="Pause ride"')}<div class="ride-track" role="progressbar" aria-label="Ride progress" aria-valuetext="${r.index} of ${r.queue.length} practiced" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i><span style="left:${Math.max(4,Math.min(94,pct))}%" aria-hidden="true">🚆</span></div><span class="combo ${r.combo>=3?'hot':''}">${r.combo>=3?'🔥 '+r.combo+' · ':''}✦ ${r.xp} XP</span></header>`;}
+  function freeClock(r){return '⏱ '+(r.free.limit?clock(Math.max(0,r.free.limit-r.seconds))+' left':clock(r.seconds));}
+  function lessonHeader(r){if(r.free)return `<header class="ride-bar">${btn('✕','pause','icon-button','aria-label="Pause practice"')}<strong id="free-clock" class="grow">${freeClock(r)}</strong><span class="combo ${r.combo>=3?'hot':''}">${r.combo>=3?'🔥 '+r.combo+' · ':''}✦ ${r.xp} XP</span>${btn('Finish','free-finish','small-button')}</header>`;const pct=Math.min(100,r.index/r.queue.length*100);return `<header class="ride-bar">${btn('✕','pause','icon-button','aria-label="Pause ride"')}<div class="ride-track" role="progressbar" aria-label="Ride progress" aria-valuetext="${r.index} of ${r.queue.length} practiced" aria-valuenow="${Math.round(pct)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i><span style="left:${Math.max(4,Math.min(94,pct))}%" aria-hidden="true">🚆</span></div><span class="combo ${r.combo>=3?'hot':''}">${r.combo>=3?'🔥 '+r.combo+' · ':''}✦ ${r.xp} XP</span></header>`;}
   function audioButtons(text,quiet=false){return quiet?'':`<div class="audio-controls">${btn('<span>🔊</span><strong>Listen</strong>','speak','listen-button',`data-text="${esc(text)}"`)}${btn('🐢 Slow','slow','slow-button',`data-text="${esc(text)}"`)}</div>`;}
   function renderStory(){
     const r=S.active,stop=stopById[r.stopId];if(!stop){r.phase='questions';return renderRide();}
@@ -455,7 +560,7 @@
     const fb=r.feedback,disabled=fb?'disabled':'';
     const instruction=(q.t==='read'?q.en:q.q) || C.ui[q.t]?.[0] || 'What do you say?';
     const translation=q.qAm || C.ui[q.t]?.[1] || 'ምን ትያለሽ?';
-    let html=`<section class="question question-${q.t} slide-in" aria-labelledby="question-title"><div class="exercise-label">${{listen:'LISTEN & PICK',read:'WORD CHECK',match:'MATCH THE PAIRS',build:'BUILD THE SENTENCE',mc:'WHAT DO YOU SAY?',type:'TYPE IT',say:'YOUR VOICE',twins:'SOUND TWINS'}[q.t]}${r.index>=r.baseCount?' · ONE MORE TRY':''}</div><h1 id="question-title">${esc(q.t==='say'&&r.quiet?'Read. Then say it yourself.':instruction)}</h1>${am(translation)}`;
+    let html=`<section class="question question-${q.t} slide-in" aria-labelledby="question-title"><div class="exercise-label">${{listen:'LISTEN & PICK',read:'WORD CHECK',match:'MATCH THE PAIRS',build:'BUILD THE SENTENCE',mc:'WHAT DO YOU SAY?',type:'TYPE IT',say:'YOUR VOICE',twins:'SOUND TWINS'}[q.t]}${r.index>=r.baseCount&&!r.free?' · ONE MORE TRY':''}</div><h1 id="question-title">${esc(q.t==='say'&&r.quiet?'Read. Then say it yourself.':instruction)}</h1>${am(translation)}`;
     if(q.t==='listen'||q.t==='twins')html+=audioButtons(q.audio,r.quiet);
     if(q.t==='read')html+=audioButtons(q.audio||q.en,r.quiet);
     if(['listen','read','mc','twins'].includes(q.t))html+=`<div class="options">${q.opts.map((o,i)=>btn(`<span class="option-letter">${String.fromCharCode(65+i)}</span><span ${/[\u1200-\u137F]/.test(o)?'lang="am" class="am"':''}>${esc(o)}</span>${fb&&i===q.a?'<span class="answer-check">✓</span>':''}`,'answer',`option ${fb&&i===q.a?'correct':''} ${fb&&!fb.ok&&r.draft.selected===i?'incorrect':''}`,`data-index="${i}" ${disabled}`)).join('')}</div>`;
@@ -487,6 +592,7 @@
   function applyAnswer(ok,message=null,translation=null){
     const r=S.active;if(!r||r.feedback)return;
     const q=r.queue[r.index];
+    S.answers[ok?'right':'wrong']++;
     if(ok){r.correct++;r.combo++;const bonus=r.combo>=3?5:0;r.xp+=(10+bonus)*(r.double?2:1);tone(r.combo>=3?'combo':'correct');}
     else {r.mistakes++;r.combo=0;r.queue.push(JSON.parse(JSON.stringify(q)));tone('wrong');}
     for(const id of q.cardIds||[])advanceCard(S,id,ok&&!r.draft.hadWrong);
@@ -511,7 +617,7 @@
         return applyAnswer(true,'All matched! Well done.','ሁሉንም አዛመድሽ! በጣም ጥሩ።');
       }
     } else {
-      d.hadWrong=true;r.mistakes++;r.combo=0;d.pair=null;
+      d.hadWrong=true;r.mistakes++;S.answers.wrong++;r.combo=0;d.pair=null;
       d.pairMessage=`Try again: ${q.pairs[prev.index][0]} = ${q.pairs[prev.index][1]}.`;
       for(const id of q.cardIds||[])if([q.pairs[index][0],q.pairs[prev.index][0]].includes(C.cards[id]?.en))advanceCard(S,id,false);
       tone('wrong');announce(d.pairMessage);
@@ -519,8 +625,13 @@
     save();renderRide();
   }
   function nextQuestion(){
-    if(!S.active?.feedback)return;stopMedia();S.active.index++;S.active.feedback=null;S.active.draft={};save();
-    if(S.active.index>=S.active.queue.length)return completeRide();renderRide();goTop();
+    if(!S.active?.feedback)return;stopMedia();const r=S.active;r.index++;r.feedback=null;r.draft={};
+    if(r.free){
+      if(r.free.limit&&r.seconds>=r.free.limit)return completeRide();
+      if(r.index>=r.queue.length&&r.queue.length<1900){const more=freeBatch(r.free.lineId);r.queue.push(...more);r.cardIds=[...new Set([...r.cardIds,...more.flatMap(q=>q.cardIds||[])])];}
+    }
+    save();
+    if(r.index>=r.queue.length)return completeRide();renderRide();goTop();
   }
   function addXP(amount){S.xp+=amount;const d=dateKey();S.days[d]||={xp:0,rides:0,seconds:0};S.days[d].xp+=amount;}
   function chooseReward(){
@@ -537,7 +648,8 @@
     if(stop){S.stops[stop.id]=Math.max(S.stops[stop.id]||0,stars);const l=C.lines.find(l=>l.id===stop.lineId);if(l.stops.every(s=>S.stops[s.id])&&!S.stamps.includes(l.stamp))S.stamps.push(l.stamp);}
     const notice=completeDay(S,today);if(notice)S.notice=notice;
     S.rides++;S.seconds+=r.seconds;addXP(r.xp);S.days[today].rides++;S.days[today].seconds+=r.seconds;
-    S.result={name:r.name,xp:r.xp,stars,words:Math.max(0,wordCount(S)-r.knownBefore),seconds:r.seconds,correct:r.correct,reward:chooseReward(),open:false,speedAvailable:S.rides%3===0,previousDay};
+    logSession(r.free?'free':stop?'ride':r.stopId==='guide'?'guide':'review',r.free?.lineId||stop?.lineId||'',r.seconds,r.correct,r.mistakes);
+    S.result={free:!!r.free,name:r.name,xp:r.xp,stars,words:Math.max(0,wordCount(S)-r.knownBefore),seconds:r.seconds,correct:r.correct,reward:chooseReward(),open:false,speedAvailable:S.rides%3===0,previousDay};
     S.active=null;save();tone('fanfare');renderResult();confetti();goTop();
   }
   function renderResult(){
@@ -545,7 +657,7 @@
     const enc=C.ui.encourage[(S.rides-1)%C.ui.encourage.length];
     const stamp=r.reward.type==='stamp'?stampList.find(([id])=>id===r.reward.stamp):null;
     const rewardLabel=r.reward.type==='xp'?`+${r.reward.amount} bonus XP`:r.reward.type==='shield'?'A Streak Shield!':`${stamp?.[1]||'🛂'} ${r.reward.stamp} stamp!`;
-    layout(`<section class="result-screen"><div class="ticket-label">STOP COMPLETE!</div><div class="celebration-stars" aria-label="${r.stars} of 3 stars">${[1,2,3].map(n=>`<span class="${n<=r.stars?'earned':''}">★</span>`).join('')}</div><h1>You’re going places!</h1><p>${esc(r.name)} · complete!<br>${am('ትምህርቱን ጨርሰሻል! በጣም ጎበዝ።')}</p><div class="arrival-track"><span>●</span><i></i><span class="arriving-train">🚆</span><i></i><span>●</span></div><div class="result-stats"><div><strong>+${r.xp}</strong><small>XP</small></div><div><strong>+${r.words}</strong><small>new ${r.words===1?'word':'words'}</small></div><div><strong>${Math.floor(r.seconds/60)}:${String(Math.floor(r.seconds%60)).padStart(2,'0')}</strong><small>time</small></div></div><div class="encouragement"><strong>${r.correct} answers practiced correctly. ${esc(enc[0])}</strong>${am(enc[1])}${r.previousDay?`<small>You rode ${r.previousDay} time${r.previousDay===1?'':'s'} yesterday. Today: ${daily().rides}.</small>`:''}</div><section class="chest-card ${r.open?'opened':''}"><span class="eyebrow">${r.open?'YOUR REWARD':'YOUR SURPRISE REWARD'}</span>${btn(`<span class="chest">${r.open?(r.reward.type==='shield'?'🛡️':r.reward.type==='xp'?'✦':stamp?.[1]||'🛂'):'🎁'}</span><strong>${r.open?esc(rewardLabel):'Tap to open your reward'}</strong>`,'chest','chest-button',r.open?'disabled':'')}${r.open?'<p>Earned by showing up for yourself.</p>':''}</section></section>`,'You did it!',null,{nav:false,mode:'result',footer:r.open?primary('Back to my journey →','result-done')+(r.speedAvailable?btn('⚡ 45-second speed round','speed-start','button secondary'):''):primary('🎁 Open my surprise','chest')});
+    layout(`<section class="result-screen"><div class="ticket-label">${r.free?'PRACTICE COMPLETE!':'STOP COMPLETE!'}</div><div class="celebration-stars" aria-label="${r.stars} of 3 stars">${[1,2,3].map(n=>`<span class="${n<=r.stars?'earned':''}">★</span>`).join('')}</div><h1>${r.free?'Look at you go!':'You’re going places!'}</h1><p>${esc(r.name)} · complete!<br>${am('ትምህርቱን ጨርሰሻል! በጣም ጎበዝ።')}</p>${r.free?'':'<div class="arrival-track"><span>●</span><i></i><span class="arriving-train">🚆</span><i></i><span>●</span></div>'}<div class="result-stats"><div><strong>+${r.xp}</strong><small>XP</small></div><div><strong>+${r.words}</strong><small>new ${r.words===1?'word':'words'}</small></div><div><strong>${Math.floor(r.seconds/60)}:${String(Math.floor(r.seconds%60)).padStart(2,'0')}</strong><small>time</small></div></div><div class="encouragement"><strong>${r.correct} answers practiced correctly. ${esc(enc[0])}</strong>${am(enc[1])}${r.previousDay?`<small>You rode ${r.previousDay} time${r.previousDay===1?'':'s'} yesterday. Today: ${daily().rides}.</small>`:''}</div><section class="chest-card ${r.open?'opened':''}"><span class="eyebrow">${r.open?'YOUR REWARD':'YOUR SURPRISE REWARD'}</span>${btn(`<span class="chest">${r.open?(r.reward.type==='shield'?'🛡️':r.reward.type==='xp'?'✦':stamp?.[1]||'🛂'):'🎁'}</span><strong>${r.open?esc(rewardLabel):'Tap to open your reward'}</strong>`,'chest','chest-button',r.open?'disabled':'')}${r.open?'<p>Earned by showing up for yourself.</p>':''}</section></section>`,'You did it!',null,{nav:false,mode:'result',footer:r.open?primary('Back to my journey →','result-done')+(r.speedAvailable?btn('⚡ 45-second speed round','speed-start','button secondary'):''):primary('🎁 Open my surprise','chest')});
   }
   function openChest(){
     const r=S.result;if(!r||r.open)return;
@@ -555,7 +667,7 @@
     if(r.reward.type==='stamp'&&!S.stamps.includes(r.reward.stamp))S.stamps.push(r.reward.stamp);
     save();tone('fanfare');renderResult();confetti();
   }
-  function finishResult(){S.result=null;save();checkLevel(()=>{renderHome();goTop();document.getElementById('current-station')?.classList.add('new-station');});}
+  function finishResult(){const free=S.result?.free;S.result=null;save();checkLevel(()=>{if(free){renderHome();return goTop();}renderMap();goTop();document.getElementById('current-station')?.classList.add('new-station');});}
   function checkLevel(next){
     const l=levelFor(S.xp);if(l<=S.levelSeen)return next();S.levelSeen=l;save();screen='level';levelReturn=next;tone('fanfare');
     layout(`<section class="level-moment"><span class="ticket-label">YOU’RE MOVING FORWARD</span><div>${LEVELS[l][2]}</div><p>Level ${l+1}</p><h1>Hello,<br><em>${LEVELS[l][1]}.</em></h1><p>Your practice brought you here.</p>${am('እንግሊዝኛሽ እየተሻሻለ ነው። በጣም ጎበዝ።')}</section>`,'A new chapter',null,{nav:false,footer:primary('Keep going →','level-done')});confetti();
@@ -600,6 +712,7 @@
         if(generation!==micGeneration||screen!=='ride'||S.active!==r)return;
         const blob=new Blob(recordingChunks,{type:recorder?.mimeType||mime||'audio/mp4'});
         recordingURL=URL.createObjectURL(blob);recordingBusy=false;
+        keepRecording(blob,r.queue[r.index],r.stopId);
         const playback=document.getElementById('playback');
         if(playback)playback.innerHTML=recordingComparison(r.queue[r.index]);
         document.querySelector('.record-panel')?.classList.add('recorded');
@@ -620,7 +733,7 @@
   function tick(){
     const now=Date.now(),elapsed=Math.min(3,(now-lastTick)/1000);lastTick=now;
     if(document.hidden)return;
-    if(screen==='ride'&&S.active)S.active.seconds+=elapsed;
+    if(screen==='ride'&&S.active){S.active.seconds+=elapsed;if(S.active.free){const c=document.getElementById('free-clock');if(c)c.textContent=freeClock(S.active);}}
     if(screen==='speed'&&S.speed&&!S.speed.finished){
       if(now>=S.speed.endAt){finishSpeed();renderSpeed();return;}
       const seconds=document.getElementById('speed-seconds'),fill=document.getElementById('speed-fill');
@@ -637,7 +750,15 @@
     const b=e.target.closest('button[data-action]');if(!b||b.disabled)return;initAudio();
     const a=b.dataset.action,index=Number(b.dataset.index);
     if(a==='speak'||a==='slow')return speak(b.dataset.text,a==='slow',b);
-    if(a==='tab'){stopMedia();save();currentTab=b.dataset.tab;({map:renderHome,words:renderWords,passport:renderPassport,me:renderMe}[currentTab]||renderHome)();return goTop();}
+    if(a==='tab'){stopMedia();save();currentTab=b.dataset.tab;({home:renderHome,map:renderMap,words:renderWords,passport:renderPassport,me:renderMe}[currentTab]||renderHome)();return goTop();}
+    if(a==='free'){renderFreeSetup();return goTop();}
+    if(a==='free-topic'){freeTopic=b.dataset.line;return renderFreeSetup();}
+    if(a==='free-time'){freeLimit=Number(b.dataset.limit)||0;return renderFreeSetup();}
+    if(a==='free-start')return startFree();
+    if(a==='free-finish')return finishFree();
+    if(a==='puzzle'){makePuzzle();renderPuzzle();return goTop();}
+    if(a==='cell')return tapCell(index);
+    if(a==='progress'){renderProgress();return goTop();}
     if(a==='home')return pauseRide();
     if(a==='words'){renderWords();return goTop();}
     if(a==='me'){renderMe();return goTop();}
@@ -694,14 +815,14 @@
   });
   document.addEventListener('visibilitychange',()=>{
     if(document.hidden){stopMedia();save();}
-    else {lastTick=Date.now();const n=reconcileStreak(S);if(n)S.notice=n;if(screen==='speed')renderSpeed();if(screen==='main'&&currentTab==='map')renderHome();}
+    else {lastTick=Date.now();const n=reconcileStreak(S);if(n)S.notice=n;if(screen==='speed')renderSpeed();if(screen==='main'&&currentTab==='map')renderMap();if(screen==='main'&&currentTab==='home')renderHome();}
   });
   globalThis.addEventListener('pagehide',()=>{stopMedia();save();});
   timer=setInterval(tick,1000);
   // Periodic saves also preserve elapsed time when iOS suspends without pagehide.
   setInterval(()=>{if(S.active||S.speed)save();},10000);
   if(location.protocol!=='file:' && 'serviceWorker' in navigator){
-    navigator.serviceWorker.register('./sw.js').then(()=>navigator.serviceWorker.ready).then(()=>{offlineReady=true;if(screen==='main'&&currentTab==='map')renderHome();}).catch(()=>{toast('Offline saving is unavailable here. Your progress code still works.');});
+    navigator.serviceWorker.register('./sw.js').then(()=>navigator.serviceWorker.ready).then(()=>{offlineReady=true;if(screen==='main'&&currentTab==='map')renderMap();}).catch(()=>{toast('Offline saving is unavailable here. Your progress code still works.');});
   }
   if(!S.onboarded)renderOnboarding();else if(S.result)renderResult();else if(S.speed)renderSpeed();else renderHome();
 })();
