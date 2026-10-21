@@ -565,3 +565,14 @@ hr { border:0; border-top:1px solid var(--line); margin:25px 0; }
 @keyframes eggWobble { 0%,100% { transform:rotate(0); } 25% { transform:rotate(-12deg); } 75% { transform:rotate(12deg); } }
 @keyframes hatchPop { from { transform:scale(.2) rotate(-20deg); opacity:0; } to { transform:none; opacity:1; } }
 @media (prefers-reduced-motion:reduce) { .hatch-pop,.pet-strip.hatching .pet-strip-egg { animation:none; } }
+/* Amharic fading + level check (10-20) */
+.am-fade { margin-top:4px; }
+.am-fade summary { display:inline-block; cursor:pointer; list-style:none; font-family:"Kefa","Noto Sans Ethiopic",Nyala,Ebrima,sans-serif; font-size:13px; color:var(--muted); border:1px dashed var(--line); border-radius:10px; padding:1px 9px; }
+.am-fade summary::-webkit-details-marker { display:none; }
+.am-fade[open] summary { display:none; }
+.hide-am .am-fade { display:none; }
+.level-result { display:flex; align-items:center; gap:14px; margin:14px 0 4px; }
+.level-result strong,.level-result small { display:block; }
+.level-result small { color:var(--muted); }
+.level-badge { display:inline-flex; align-items:center; justify-content:center; min-width:62px; height:62px; padding:0 10px; border-radius:18px; background:var(--leaf); color:var(--on-accent); font-size:24px; font-weight:800; letter-spacing:-.5px; }
+.level-badge.big { display:flex; width:120px; min-width:120px; height:120px; border-radius:32px; font-size:46px; margin:22px auto 10px; }

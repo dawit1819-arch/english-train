@@ -15,6 +15,30 @@
     ['lion','Lion of Judah','የይሁዳ አንበሳ','legendary'],['unicorn','Unicorn','ባለ አንድ ቀንድ ፈረስ','legendary']];
   const petById=Object.fromEntries(PETS.map(p=>[p[0],p]));
   const PET_STAGES=[[0,'Baby'],[150,'Young'],[600,'Grown up'],[1500,'Best friend']];
+  // Practice level check, CEFR-style: 5 questions per level, stops after a level with fewer than 4 right.
+  const TEST_LEVELS=['Starter','A1','A2','B1','B2'];
+  const TEST_INFO={Starter:['Starter','You are just starting. You know some words and greetings.'],A1:['Beginner','You can use everyday words and phrases: greetings, numbers, prices and simple questions.'],A2:['Elementary','You can handle simple tasks at work and in shops, talk about yesterday, and read short messages.'],B1:['Intermediate','You can deal with most everyday situations, follow clear speech, and explain a simple problem.'],B2:['Upper intermediate','You can speak with confidence, understand longer texts, and handle most work conversations.']};
+  const TEST_BANK=[
+    ['A1','listen','What do you hear?','Good morning',['Good morning','Good night','Thank you'],0],
+    ['A1','mc','What is your name?','',['My name is Ana.','I am fine.','Yes, please.'],0],
+    ['A1','mc','I ___ a cashier.','',['am','is','are'],0],
+    ['A1','listen','How much is it?','It is seven dollars.',['$7','$17','$70'],0],
+    ['A1','mc','Which day comes after Monday?','',['Tuesday','Sunday','Friday'],0],
+    ['A2','mc','Yesterday I ___ to work by bus.','',['went','go','going'],0],
+    ['A2','listen','What does the customer say?','Can I pay with a card?',['Can I pay with a card?','Can I play with a cat?','Can I park my car?'],0],
+    ['A2','mc','The total is $8.50. The customer gives you $10. How much change?','',['$1.50','$2.50','$1.05'],0],
+    ['A2','mc','“Excuse me, where is the train station?” What is a good answer?','',['Go straight and turn left.','It is five o’clock.','I like trains.'],0],
+    ['A2','mc','I have an appointment ___ Tuesday.','',['on','in','at'],0],
+    ['B1','mc','If it rains tomorrow, I ___ take the bus.','',['will','would','am'],0],
+    ['B1','mc','Read: “The store will be closed on Monday for the holiday. Online orders will still ship.” What happens on Monday?','',['The store is closed, but online orders still ship.','Everything is closed, even online.','The store opens late.'],0],
+    ['B1','mc','I have worked here ___ ten years.','',['for','since','during'],0],
+    ['B1','listen','What do you hear?','Could you tell me when the next train leaves?',['Could you tell me when the next train leaves?','Could you tell me where the next train leaves?','Could you sell me a ticket for the next train?'],0],
+    ['B1','mc','The doctor told me to ___ this medicine twice a day.','',['take','eat','do'],0],
+    ['B2','mc','I wish I ___ more time to study.','',['had','have','will have'],0],
+    ['B2','mc','Despite ___ tired, she finished her shift.','',['being','be','was'],0],
+    ['B2','mc','Read: “Employees must clock in no later than five minutes before their shift begins.” Your shift starts at 12:00. When must you clock in?','',['By 11:55','At 12:05','Any time after 12:00'],0],
+    ['B2','mc','The meeting was put ___ until next week.','',['off','on','out'],0],
+    ['B2','listen','What does the person mean?','I’d rather you didn’t park here.',['Please don’t park here.','You must park here.','You parked very well.'],0]];
   const numberIds=new Set(C.guides.numbers.map(c=>c.id));
   const calendarIds=new Set([...C.guides.days,...C.guides.months].map(c=>c.id));
   const distractorCache=new Map();
@@ -40,7 +64,7 @@
     return a===b ? 'exact' : b.length>=6 && distance(a,b)===1 ? 'almost' : 'wrong';
   }
   function defaults() {
-    return {version:1,xp:0,settings:{goal:1,am:true,sound:true},onboarded:false,cards:{},stops:{},seenStops:[],days:{},rides:0,seconds:0,streak:0,bestStreak:0,shields:2,lastRide:null,shieldThrough:null,streakMilestone:0,stamps:[],speedBest:0,commute:{quiet:false,silent:false,until:0},active:null,result:null,speed:null,levelSeen:0,notice:null,puzzles:0,answers:{right:0,wrong:0},log:[],pets:{owned:{},egg:60,buddy:null,names:{},growth:{},hatch:null}};
+    return {version:1,xp:0,settings:{goal:1,am:true,sound:true},onboarded:false,cards:{},stops:{},seenStops:[],days:{},rides:0,seconds:0,streak:0,bestStreak:0,shields:2,lastRide:null,shieldThrough:null,streakMilestone:0,stamps:[],speedBest:0,commute:{quiet:false,silent:false,until:0},active:null,result:null,speed:null,levelSeen:0,notice:null,puzzles:0,answers:{right:0,wrong:0},log:[],pets:{owned:{},egg:60,buddy:null,names:{},growth:{},hatch:null},tests:[]};
   }
   function validDate(key) {return typeof key==='string' && /^\d{4}-\d{2}-\d{2}$/.test(key) && Number.isFinite(ordinal(key)) && shiftDate(key,0)===key;}
   function validQuestion(q) {
@@ -88,6 +112,7 @@
       for(const [id,v] of Object.entries(rp.growth||{}))if(s.pets.owned[id])s.pets.growth[id]=num(v);
       s.pets.hatch=s.pets.owned[rp.hatch]?rp.hatch:null;
     }
+    s.tests=Array.isArray(raw.tests)?raw.tests.filter(t=>t&&validDate(t.d)&&TEST_LEVELS.includes(t.level)).slice(-50).map(t=>({d:t.d,level:t.level,scores:Array.isArray(t.scores)?t.scores.slice(0,4).map(n=>Math.floor(num(n,5))):[]})):[];
     s.puzzles=Math.floor(num(raw.puzzles));
     s.answers={right:Math.floor(num(raw.answers?.right)),wrong:Math.floor(num(raw.answers?.wrong))};
     s.log=Array.isArray(raw.log)?raw.log.filter(e=>e&&validDate(e.d)&&['ride','free','review','guide','puzzle'].includes(e.type)).slice(-500).map(e=>({d:e.d,type:e.type,topic:typeof e.topic==='string'?e.topic.slice(0,40):'',seconds:num(e.seconds,86400),right:num(e.right,1e4),wrong:num(e.wrong,1e4)})):[];
@@ -163,6 +188,8 @@
   const root=document.getElementById('app');
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const am=s=>s?`<span lang="am" class="am am-help">${esc(s)}</span>`:'';
+  // Once she knows a word well (box 3+), its Amharic hides behind a tap.
+  const amFade=(id,text)=>!text?'':(S.cards[id]?.box||0)>=3?`<details class="am-fade"><summary lang="am">አማርኛ</summary>${am(text)}</details>`:am(text);
   const bilingual=(en,translation)=>`${esc(en)}${am(translation)}`;
   const btn=(label,action,classes='',extra='')=>`<button class="${classes}" data-action="${action}" ${extra}>${label}</button>`;
   const primary=(label,action,extra='')=>btn(label,action,'button primary',extra);
@@ -321,7 +348,7 @@
   }
   function wordRow(id,guide=false,label='') {
     const w=C.cards[id],c=S.cards[id],box=c?.box||0;
-    return `<div class="word-row">${btn('🔊','speak','icon-button',`data-text="${esc(w.en)}" aria-label="Listen: ${esc(w.en)}"`)}<div class="grow">${label?`<span class="word-label">${esc(label)}</span>`:''}<strong>${esc(w.en)}</strong>${w.say?`<small class="pronunciation">${esc(w.say)}</small>`:''}${am(w.am)}${guide?'':`<div class="mastery" role="img" aria-label="Mastery ${box} of 5">${Array.from({length:5},(_,i)=>`<i class="${i<box?'filled':''}"></i>`).join('')}</div>`}</div>${guide?btn('Practice','guide-ride','small-button',`data-card="${esc(id)}" aria-label="Practice ${esc(w.en)}"`):btn('🐢','slow','icon-button',`data-text="${esc(w.en)}" aria-label="Listen slowly: ${esc(w.en)}"`)}</div>`;
+    return `<div class="word-row">${btn('🔊','speak','icon-button',`data-text="${esc(w.en)}" aria-label="Listen: ${esc(w.en)}"`)}<div class="grow">${label?`<span class="word-label">${esc(label)}</span>`:''}<strong>${esc(w.en)}</strong>${w.say?`<small class="pronunciation">${esc(w.say)}</small>`:''}${amFade(id,w.am)}${guide?'':`<div class="mastery" role="img" aria-label="Mastery ${box} of 5">${Array.from({length:5},(_,i)=>`<i class="${i<box?'filled':''}"></i>`).join('')}</div>`}</div>${guide?btn('Practice','guide-ride','small-button',`data-card="${esc(id)}" aria-label="Practice ${esc(w.en)}"`):btn('🐢','slow','icon-button',`data-text="${esc(w.en)}" aria-label="Listen slowly: ${esc(w.en)}"`)}</div>`;
   }
   function renderGuide(){
     screen='guide';let html=`<section class="page-intro"><span class="eyebrow">YOUR POCKET GUIDE</span><h1>A number.<br><em>A day. A date.</em></h1><p>Listen to any word. Tap Practice for a short ride.</p>${am('ለመስማት ቃሉን ንኪ።')}</section><div class="notice"><strong>Boston clock & calendar</strong><p>Times here use the US clock and Gregorian calendar. 7:30 AM means half past seven in the morning.</p>${am('እዚህ ያሉት ሰዓቶች የአሜሪካ አቆጣጠር ናቸው።')}</div>`;
@@ -404,12 +431,50 @@
     const recent=S.log.slice(-10).reverse();
     layout(`<section class="page-intro"><span class="eyebrow">MY PROGRESS</span><h1>Look how far<br><em>you’ve come.</em></h1>${am('እንግሊዝኛሽ እየተሻሻለ ነው።')}</section>
 <div class="stats-grid">${[[days.length,'days practiced','📅'],[Math.floor(S.seconds/60),'minutes learned','⏱'],[wordCount(S),'words you know','🌱'],[totalAnswers?Math.round(S.answers.right/totalAnswers*100)+'%':'–','answers right','🎯'],[S.rides,'lessons finished','🚆'],[S.puzzles,'word searches','🔎']].map(([n,l,i])=>`<div class="stat"><span>${i}</span><strong>${n}</strong><small>${l}</small></div>`).join('')}</div>
+${testPanel()}
 <section class="panel"><h2>Last 4 weeks</h2><p class="muted">Greener days mean more minutes practiced.</p><div class="heatmap">${month.map(d=>{const s=S.days[d]?.seconds||0;return `<i title="${d}: ${Math.round(s/60)} min" style="--level:${s?Math.max(.2,s/maxSec):0}" class="${d===today?'today':''}"></i>`;}).join('')}</div></section>
 <section class="panel"><h2>How well you know your words</h2>${['New','Familiar','Growing','Strong','Mastered'].map((label,i)=>`<div class="league-row"><span>${label}</span><strong>${boxes[i]}</strong></div><div class="league-track"><i style="width:${boxes[i]/totalCards*100}%"></i></div>`).join('')}</section>
 ${topics.length?`<section class="panel"><h2>Words by topic</h2>${topics.map(([l,k,n])=>`<div class="league-row"><span>${l.icon} ${esc(l.title)}</span><strong>${k} / ${n}</strong></div><div class="league-track"><i style="width:${k/n*100}%"></i></div>`).join('')}</section>`:''}
 ${hard.length?`<section class="panel"><h2>Words to practice</h2><p class="muted">These were tricky. They will come back in your lessons.</p>${hard.map(([id])=>wordRow(id)).join('')}</section>`:''}
 <section class="panel"><h2>Recent practice</h2>${recent.length?recent.map(e=>`<div class="league-row"><span>${esc(e.d.slice(5))} · ${names[e.type]||e.type}</span><strong>${Math.max(1,Math.round(e.seconds/60))} min · ${e.right}✓ ${e.wrong}✗</strong></div>`).join(''):'<p class="muted">Your lessons will show up here.</p>'}<p class="muted" id="voice-count"></p></section>`,'My progress','home');
     showVoiceCount();
+  }
+  let levelTest=null;
+  const TEST_UNLOCK=10,TEST_BLOCKS=['A1','A2','B1','B2'];
+  function testStatus(){
+    const last=S.tests.at(-1),days=last?Math.round(ordinal(dateKey())-ordinal(last.d)):Infinity;
+    if(S.rides<TEST_UNLOCK)return {ok:false,why:`Unlocks after ${TEST_UNLOCK} finished lessons. You have finished ${S.rides}.`};
+    if(days<30)return {ok:false,why:`Your next level check opens in ${30-days} day${30-days===1?'':'s'}.`};
+    return {ok:true};
+  }
+  function testPanel(){
+    const ts=testStatus(),last=S.tests.at(-1);
+    return `<section class="panel"><h2>English level check</h2>${am('የእንግሊዝኛ ደረጃ ፈተና')}${last?`<div class="level-result"><span class="level-badge">${last.level}</span><div><strong>${TEST_INFO[last.level][0]}</strong><small>${esc(last.d)}</small></div></div><p class="muted">${TEST_INFO[last.level][1]}</p>`:'<p class="muted">A short practice test that shows your English level.</p>'}${S.tests.length>1?`<p class="muted">Your levels: ${S.tests.map(t=>`${t.d.slice(5)} ${t.level}`).join(' → ')}</p>`:''}${ts.ok?primary('📝 Take the level check','test'):`<p class="muted">🔒 ${esc(ts.why)}</p>`}</section>`;
+  }
+  function renderTestIntro(){
+    screen='test';
+    layout(`<section class="page-intro"><span class="eyebrow">LEVEL CHECK</span><h1>How strong is<br><em>your English?</em></h1>${am('የእንግሊዝኛ ደረጃ ፈተና')}<p>Up to 20 questions in 4 parts. Each part is a little harder. About 5 to 10 minutes.</p><p>There is no Amharic help in this test, so it shows your real level. If a part is too hard, the test stops there. That is okay!</p>${am('የምትችዪውን ያህል ሞክሪ።')}<p class="muted">This is a practice check based on the international CEFR levels (A1, A2, B1, B2). It is not an official certificate.</p></section>`,'Level check','progress',{nav:false,footer:primary('▶ Start the level check','test-begin')});
+  }
+  function loadTestBlock(){
+    const lvl=TEST_BLOCKS[levelTest.block];
+    levelTest.qs=shuffle(TEST_BANK.filter(q=>q[0]===lvl)).map(([,t,q,audio,opts,a])=>{const o=shuffle(opts);return {t,q,audio,opts:o,a:o.indexOf(opts[a])};});
+    levelTest.i=0;levelTest.right=0;
+  }
+  function renderTest(){
+    const t=levelTest;if(!t)return renderProgress();screen='test';const q=t.qs[t.i];
+    layout(`<section class="question slide-in"><div class="exercise-label">LEVEL CHECK · PART ${t.block+1} OF 4 · ${t.i+1} / ${t.qs.length}</div><h1>${esc(q.q)}</h1>${q.t==='listen'?audioButtons(q.audio):''}<div class="options">${q.opts.map((o,i)=>btn(`<span class="option-letter">${String.fromCharCode(65+i)}</span><span>${esc(o)}</span>`,'test-answer','option',`data-index="${i}"`)).join('')}</div></section>`,'Level check','test-quit',{nav:false,footer:'<p class="dock-note">Do your best. Guessing is okay.</p>'});
+  }
+  function answerTest(index){
+    const t=levelTest;if(!t)return;if(index===t.qs[t.i].a)t.right++;
+    if(++t.i<t.qs.length){renderTest();return goTop();}
+    t.scores.push(t.right);
+    if(t.right>=4&&t.block<TEST_BLOCKS.length-1){t.block++;loadTestBlock();renderTest();return goTop();}
+    let passed=0;while(passed<t.scores.length&&t.scores[passed]>=4)passed++;
+    const prev=S.tests.at(-1),entry={d:dateKey(),level:TEST_LEVELS[passed],scores:t.scores};
+    S.tests.push(entry);addXP(20);save();levelTest=null;
+    const up=prev&&TEST_LEVELS.indexOf(entry.level)>TEST_LEVELS.indexOf(prev.level);
+    layout(`<section class="result-screen"><div class="ticket-label">YOUR LEVEL</div><div class="level-badge big">${entry.level}</div><h1>${TEST_INFO[entry.level][0]}</h1><p>${TEST_INFO[entry.level][1]}</p>${am('በጣም ጎበዝ።')}${up?`<div class="notice">You moved up from ${prev.level}! Your practice is working.</div>`:''}<div class="result-stats">${entry.scores.map((n,i)=>`<div><strong>${n}/5</strong><small>${TEST_BLOCKS[i]}</small></div>`).join('')}</div><p class="muted">Practice check based on CEFR levels, not an official certificate. Take it again in 30 days to see your progress.</p></section>`,'Level check',null,{nav:false,footer:primary('See my progress →','progress')});
+    tone('fanfare');confetti();goTop();
   }
   function encodeState(s){const bytes=new TextEncoder().encode(JSON.stringify(s));let binary='';for(const b of bytes)binary+=String.fromCharCode(b);return btoa(binary);}
   function decodeState(code){
@@ -581,7 +646,7 @@ ${hard.length?`<section class="panel"><h2>Words to practice</h2><p class="muted"
     if(stop.dialog.length)html+=`<div class="dialog">${stop.dialog.map(d=>`<div class="dialog-bubble ${d.b?'you':''}"><span class="eyebrow">${esc(d.who)}</span><p>${esc(d.en)}</p>${am(d.am)}${r.quiet?'':btn('▶','speak','icon-button',`data-text="${esc(d.en)}" aria-label="Play ${esc(d.who)}’s line"`)}</div>`).join('')}</div>`;
     if(['u1','u3','u6'].includes(stop.lineId))html+=`<div class="notice">The original Amharic story uses Ethiopian clock time. Listen to the English time for Boston appointments.${am('የእንግሊዝኛውን ሰዓት አዳምጪ።')}</div>`;
     if(['numbers'].includes(stop.lineId))html+=`<div class="notice">Times here use the US clock: 7:30 AM is half past seven in the morning.${am('እዚህ ያሉት ሰዓቶች የአሜሪካ አቆጣጠር ናቸው።')}</div>`;
-    html+=`<div class="section-heading"><h2>Your words for this ride</h2></div><p class="muted">${r.quiet?'Read each word and its meaning.':'Tap a word. Try saying it once.'}</p>${am('ለመስማት ቃሉን ንኪ።')}<div class="story-words">${stop.cardIds.map(id=>{const w=C.cards[id];return `<div class="word-row">${r.quiet?'<span class="word-sprout">🌱</span>':btn('🔊','speak','icon-button',`data-text="${esc(w.en)}" aria-label="Listen: ${esc(w.en)}"`)}<div class="grow"><strong>${esc(w.en)}</strong><small class="pronunciation">${esc(w.say)}</small>${am(w.am)}</div></div>`;}).join('')}</div>`;
+    html+=`<div class="section-heading"><h2>Your words for this ride</h2></div><p class="muted">${r.quiet?'Read each word and its meaning.':'Tap a word. Try saying it once.'}</p>${am('ለመስማት ቃሉን ንኪ።')}<div class="story-words">${stop.cardIds.map(id=>{const w=C.cards[id];return `<div class="word-row">${r.quiet?'<span class="word-sprout">🌱</span>':btn('🔊','speak','icon-button',`data-text="${esc(w.en)}" aria-label="Listen: ${esc(w.en)}"`)}<div class="grow"><strong>${esc(w.en)}</strong><small class="pronunciation">${esc(w.say)}</small>${amFade(id,w.am)}</div></div>`;}).join('')}</div>`;
     layout(html,'Your story','pause',{nav:false,footer:primary('I’m ready. Let’s practice →','story-done')});
   }
   function renderRide(){
@@ -607,7 +672,7 @@ ${hard.length?`<section class="panel"><h2>Words to practice</h2><p class="muted"
       const tile=(i,side)=>btn(esc(q.pairs[i][side]),'pair',`pair-tile ${side===1?'am':''} ${matched.includes(i)?'matched':''} ${sel?.index===i&&sel.side===side?'selected':''}`,`data-index="${i}" data-side="${side}" ${side===1?'lang="am"':''} ${matched.includes(i)||fb?'disabled':''}`);
       html+=`<div class="match-timer">✦ Match in 25 seconds for bonus XP. Take your time.</div><div class="pairs-grid"><div>${q.pairs.map((_,i)=>tile(i,0)).join('')}</div><div>${(q.order||q.pairs.map((_,i)=>i)).map(i=>tile(i,1)).join('')}</div></div><div class="pair-hint" role="status">${esc(r.draft.pairMessage||'')}</div>`;
     }
-    if(q.t==='say')html+=`<div class="say-model"><strong>${esc(q.en)}</strong>${am(q.am)}</div>${audioButtons(q.en,r.quiet)}<div class="record-panel ${recordingURL?'recorded':''}"><p id="record-status" role="status">${r.draft.fallback?'Say it out loud. Your voice is enough.':'Listen, record, then compare.'}</p>${btn('🎙 Record my voice','record','button secondary',`${disabled} data-record-start ${recordingURL?'hidden':''}`)}<div id="playback">${recordingURL?recordingComparison(q):''}</div><div class="record-actions">${btn('↻ Try again','record','button secondary',`${disabled} data-record-retry ${!recordingURL?'hidden':''}`)}${btn(r.draft.fallback?'I said it ✓':'Good · I said it ✓','said','button primary',`${disabled} ${!r.draft.fallback&&!recordingURL?'disabled':''}`)}</div>${btn('Say it without recording','mic-fallback','text-button',disabled)}</div>`;
+    if(q.t==='say')html+=`<div class="say-model"><strong>${esc(q.en)}</strong>${amFade(q.cardIds?.[0],q.am)}</div>${audioButtons(q.en,r.quiet)}<div class="record-panel ${recordingURL?'recorded':''}"><p id="record-status" role="status">${r.draft.fallback?'Say it out loud. Your voice is enough.':'Listen, record, then compare.'}</p>${btn('🎙 Record my voice','record','button secondary',`${disabled} data-record-start ${recordingURL?'hidden':''}`)}<div id="playback">${recordingURL?recordingComparison(q):''}</div><div class="record-actions">${btn('↻ Try again','record','button secondary',`${disabled} data-record-retry ${!recordingURL?'hidden':''}`)}${btn(r.draft.fallback?'I said it ✓':'Good · I said it ✓','said','button primary',`${disabled} ${!r.draft.fallback&&!recordingURL?'disabled':''}`)}</div>${btn('Say it without recording','mic-fallback','text-button',disabled)}</div>`;
     if(q.tip)html+=`<aside class="pronunciation-tip">💡 ${am(q.tip)}</aside>`;
     html+='</section>';
     const feedback=fb?`<div class="feedback ${fb.ok?'good':'gentle'}" role="status"><strong title="${esc(fb.message)}">${esc(fb.ok?(fb.message.startsWith('Almost!')?fb.message:'Well done!'):'Answer: '+(q.opts?.[q.a]||q.answer||q.en||'Try once more.'))}</strong>${am(fb.ok?C.ui.correct[1]:C.ui.retry[1])}</div>`:'';
@@ -821,6 +886,10 @@ ${hard.length?`<section class="panel"><h2>Words to practice</h2><p class="muted"
     if(a==='cell')return tapCell(index);
     if(a==='progress'){renderProgress();return goTop();}
     if(a==='pets'){petView=null;renderPets();return goTop();}
+    if(a==='test'){if(testStatus().ok)renderTestIntro();return goTop();}
+    if(a==='test-begin'){if(!testStatus().ok)return;levelTest={block:0,scores:[]};loadTestBlock();renderTest();return goTop();}
+    if(a==='test-answer')return answerTest(index);
+    if(a==='test-quit'){levelTest=null;renderProgress();return goTop();}
     if(a==='hatch'){renderHatch();return goTop();}
     if(a==='hatch-done'){const id=S.pets.hatch,first=id&&S.pets.owned[id]===1&&Object.keys(S.pets.owned).length===1;S.pets.hatch=null;save();const next=hatchReturn;hatchReturn=null;if(next&&!first)return next();petView=null;renderPets();return goTop();}
     if(a==='pet-view'){petView=b.dataset.id;renderPets();speak(petById[petView]?.[1]||'');return goTop();}
