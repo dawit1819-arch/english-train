@@ -8,6 +8,13 @@
   const LEVELS = [[0,'Passenger','🎟️'],[100,'Rider','🚆'],[300,'Commuter','🌆'],[700,'Conductor','🎩'],[1500,'Driver','🚂'],[3000,'Station Master','🏫'],[6000,'City Guide','🗺️']];
   const stampList = [['Doctor','🩺'],['Market','🛒'],['Phone','☎️'],['Map','🧭'],['Yesterday','🌅'],['Work','🤝'],['Bus','🚍'],['BU','🧹'],['Calendar','🗓️'],['Help','🛟'],['Sound','🎧'],['Bank','🏦'],['Boston','🏙️'],['Tea','☕'],['Home','🏡'],['Garden','🌿']];
   const TYPES = ['listen','read','match','build','mc','type','say','twins'];
+  // Pets she hatches and collects. [id, English, Amharic, rarity]. Art: pets/<id>.webp
+  const PETS=[['puppy','Puppy','ቡችላ','common'],['kitten','Kitten','ድመት','common'],['bunny','Bunny','ጥንቸል','common'],['duckling','Duckling','ዳክዬ','common'],['hamster','Hamster','ሃምስተር','common'],['chick','Chick','ጫጩት','common'],['piglet','Piglet','አሳማ','common'],['lamb','Lamb','ጠቦት','common'],['calf','Calf','ጥጃ','common'],['goldfish','Goldfish','ዓሣ','common'],['turtle','Turtle','ኤሊ','common'],['hedgehog','Hedgehog','ጃርት','common'],['frog','Frog','እንቁራሪት','common'],['squirrel','Squirrel','ሽኮኮ','common'],['mouse','Mouse','አይጥ','common'],['pony','Pony','ትንሽ ፈረስ','common'],
+    ['fox','Fox','ቀበሮ','rare'],['panda','Panda','ፓንዳ','rare'],['koala','Koala','ኮዋላ','rare'],['penguin','Penguin','ፔንግዊን','rare'],['owl','Owl','ጉጉት','rare'],['otter','Otter','ኦተር','rare'],['redpanda','Red panda','ቀይ ፓንዳ','rare'],['fawn','Fawn','አጋዘን','rare'],['raccoon','Raccoon','ራኩን','rare'],['sloth','Sloth','ስሎዝ','rare'],
+    ['gelada','Gelada monkey','ጭላዳ ዝንጀሮ','epic'],['walia','Walia ibex','ዋልያ','epic'],['ewolf','Ethiopian wolf','ቀይ ቀበሮ','epic'],['hyena','Hyena','ጅብ','epic'],
+    ['lion','Lion of Judah','የይሁዳ አንበሳ','legendary'],['unicorn','Unicorn','ባለ አንድ ቀንድ ፈረስ','legendary']];
+  const petById=Object.fromEntries(PETS.map(p=>[p[0],p]));
+  const PET_STAGES=[[0,'Baby'],[150,'Young'],[600,'Grown up'],[1500,'Best friend']];
   const numberIds=new Set(C.guides.numbers.map(c=>c.id));
   const calendarIds=new Set([...C.guides.days,...C.guides.months].map(c=>c.id));
   const distractorCache=new Map();
@@ -33,7 +40,7 @@
     return a===b ? 'exact' : b.length>=6 && distance(a,b)===1 ? 'almost' : 'wrong';
   }
   function defaults() {
-    return {version:1,xp:0,settings:{goal:1,am:true,sound:true},onboarded:false,cards:{},stops:{},seenStops:[],days:{},rides:0,seconds:0,streak:0,bestStreak:0,shields:2,lastRide:null,shieldThrough:null,streakMilestone:0,stamps:[],speedBest:0,commute:{quiet:false,silent:false,until:0},active:null,result:null,speed:null,levelSeen:0,notice:null,puzzles:0,answers:{right:0,wrong:0},log:[]};
+    return {version:1,xp:0,settings:{goal:1,am:true,sound:true},onboarded:false,cards:{},stops:{},seenStops:[],days:{},rides:0,seconds:0,streak:0,bestStreak:0,shields:2,lastRide:null,shieldThrough:null,streakMilestone:0,stamps:[],speedBest:0,commute:{quiet:false,silent:false,until:0},active:null,result:null,speed:null,levelSeen:0,notice:null,puzzles:0,answers:{right:0,wrong:0},log:[],pets:{owned:{},egg:60,buddy:null,names:{},growth:{},hatch:null}};
   }
   function validDate(key) {return typeof key==='string' && /^\d{4}-\d{2}-\d{2}$/.test(key) && Number.isFinite(ordinal(key)) && shiftDate(key,0)===key;}
   function validQuestion(q) {
@@ -71,6 +78,15 @@
     for(const [id,c] of Object.entries(raw.cards || {})) if(C.cards[id] && c && typeof c==='object') {
       s.cards[id]={box:Math.max(1,Math.floor(num(c.box,5))),due:num(c.due,9e12),known:c.known===true||num(c.box)>=2};
       if(c.miss)s.cards[id].miss=Math.floor(num(c.miss,1e6));
+    }
+    const rp=raw.pets&&typeof raw.pets==='object'?raw.pets:null;
+    if(rp){
+      for(const [id,n] of Object.entries(rp.owned||{}))if(petById[id]&&num(n))s.pets.owned[id]=Math.floor(num(n,999));
+      s.pets.egg=Math.floor(num(rp.egg===undefined?60:rp.egg,99));
+      s.pets.buddy=s.pets.owned[rp.buddy]?rp.buddy:null;
+      for(const [id,v] of Object.entries(rp.names||{}))if(s.pets.owned[id]&&typeof v==='string')s.pets.names[id]=v.slice(0,24);
+      for(const [id,v] of Object.entries(rp.growth||{}))if(s.pets.owned[id])s.pets.growth[id]=num(v);
+      s.pets.hatch=s.pets.owned[rp.hatch]?rp.hatch:null;
     }
     s.puzzles=Math.floor(num(raw.puzzles));
     s.answers={right:Math.floor(num(raw.answers?.right)),wrong:Math.floor(num(raw.answers?.wrong))};
@@ -163,6 +179,21 @@
   }
   save();
   const clock=s=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+  // Pets: lessons fill the egg, a full egg hatches a random animal, her buddy grows with the XP she earns.
+  const petStage=id=>PET_STAGES.reduce((n,s,i)=>(S.pets.growth[id]||0)>=s[0]?i:n,0);
+  const petName=id=>S.pets.names[id]||petById[id][1];
+  const petImg=(id,cls='')=>`<img src="pets/${id}.webp" alt="${esc(petById[id][1])}" class="pet-img ${cls}" width="256" height="256" draggable="false">`;
+  let petView=null, hatchReturn=null;
+  function rollPet(){
+    const roll=Math.random(),tier=roll<.03?'legendary':roll<.12?'epic':roll<.4?'rare':'common';
+    const pool=PETS.filter(p=>p[3]===tier),fresh=pool.filter(p=>!S.pets.owned[p[0]]),pick=fresh.length?fresh:pool;
+    return pick[Math.floor(Math.random()*pick.length)][0];
+  }
+  function feedEgg(points){
+    const p=S.pets;if(p.hatch){p.egg=Math.min(99,p.egg+points);return;}
+    p.egg+=points;if(p.egg<100)return;
+    p.egg=0;const id=rollPet();p.owned[id]=(p.owned[id]||0)+1;p.hatch=id;if(!p.buddy)p.buddy=id;
+  }
   function logSession(type,topic,seconds,right,wrong){S.log.push({d:dateKey(),type,topic,seconds:Math.round(seconds),right,wrong});if(S.log.length>500)S.log.splice(0,S.log.length-500);}
   // Her voice recordings stay on this phone (IndexedDB), labeled with the sentence and date.
   function voiceTx(mode,fn){return new Promise((ok,no)=>{const q=indexedDB.open('english-train-voice',1);q.onupgradeneeded=()=>q.result.createObjectStore('clips',{keyPath:'id',autoIncrement:true});q.onerror=()=>no(q.error);q.onsuccess=()=>{const db=q.result,t=db.transaction('clips',mode),req=fn(t.objectStore('clips'));t.oncomplete=()=>{db.close();ok(req.result);};t.onerror=()=>{db.close();no(t.error);};};});}
@@ -244,7 +275,7 @@
   function homeCard(icon,title,sub,amText,action,extra=''){return btn(`<span class="home-icon" aria-hidden="true">${icon}</span><strong>${esc(title)}</strong><small>${esc(sub)}</small>${am(amText)}`,action,'home-card',extra);}
   function renderHome(){
     screen='main';currentTab='home';const next=currentStop(),hour=new Date().getHours(),due=dueCards(S);
-    let html=`<section class="welcome"><div class="eyebrow">ENGLISH FOR YOUR DAY</div><h1>${hour<12?'Good morning.':hour<18?'Good afternoon.':'Good evening.'}</h1><p class="subtitle">${am('እንኳን ደህና መጣሽ።')}</p></section>`+dailyCard()+noticeHtml();
+    let html=`<section class="welcome"><div class="eyebrow">ENGLISH FOR YOUR DAY</div><h1>${hour<12?'Good morning.':hour<18?'Good afternoon.':'Good evening.'}</h1><p class="subtitle">${am('እንኳን ደህና መጣሽ።')}</p></section>`+petStrip()+dailyCard()+noticeHtml();
     if(S.active)html+=`<div class="resume-card"><div><span class="eyebrow">SAVED FOR YOU</span><h3>${esc(S.active.name)}</h3><p>${S.active.index} answers practiced. Pick up here.</p>${am('ከቆምሽበት ቀጥዪ።')}</div>${primary('▶ Continue','resume')}</div>`;
     html+=`<div class="home-grid">${homeCard('🚆','Train ride',`Next stop: ${next.name}`,'የባቡር ጉዞ','tab','data-tab="map"')}${homeCard('🌿','Free practice','Any topic, your pace','ነፃ ልምምድ','free')}${homeCard('🔎','Word search','Find your words','ቃል ፍለጋ','puzzle')}${homeCard('📈','My progress',`${wordCount(S)} words so far`,'እድገትሽ','progress')}</div>`;
     if(due.length>=5)html+=btn(`<span class="express-icon">↗</span><span><strong>Review Express</strong><small>${due.length} cards ready · double XP${am('ቃላቱን ደግሚ።')}</small></span><span class="xp-tag">2×</span>`,'review','express-card');
@@ -350,7 +381,7 @@
     const cells=p.grid.map((ch,i)=>btn(ch,'cell',`ws-cell${foundCells.has(i)?' found':''}${p.first===i?' first':''}`,`data-index="${i}" ${p.done?'disabled':''}`)).join('');
     const list=p.words.map(w=>`<div class="ws-word${w.found?' found':''}"><strong>${w.found?esc(w.w):'?'.repeat(w.w.length)}</strong>${am(C.cards[w.id]?.am)}</div>`).join('');
     const found=p.words.filter(w=>w.found).length;
-    layout(`<section class="page-intro"><span class="eyebrow">WORD SEARCH · ${found} / ${p.words.length}</span><h1>${p.done?'You found<br><em>them all!</em>':'Find your<br><em>words.</em>'}</h1><p>Tap the first letter, then the last letter. Use the Amharic hints.</p>${am('የመጀመሪያውን ፊደል ንኪ፣ ከዚያ የመጨረሻውን ፊደል ንኪ።')}</section><div class="ws-grid" style="--size:${p.size}">${cells}</div><div class="ws-words">${list}</div>`,'Word search','home',{nav:false,footer:p.done?primary('🔎 New puzzle','puzzle')+btn('Back home','home','button secondary'):'<p class="dock-note">Words go across, down, or diagonally.</p>'});
+    layout(`<section class="page-intro"><span class="eyebrow">WORD SEARCH · ${found} / ${p.words.length}</span><h1>${p.done?'You found<br><em>them all!</em>':'Find your<br><em>words.</em>'}</h1><p>Tap the first letter, then the last letter. Use the Amharic hints.</p>${am('የመጀመሪያውን ፊደል ንኪ፣ ከዚያ የመጨረሻውን ፊደል ንኪ።')}</section><div class="ws-grid" style="--size:${p.size}">${cells}</div><div class="ws-words">${list}</div>`,'Word search','home',{nav:false,footer:p.done?(S.pets.hatch?primary('🥚 Your egg is hatching!','hatch'):'')+primary('🔎 New puzzle','puzzle')+btn('Back home','home','button secondary'):'<p class="dock-note">Words go across, down, or diagonally.</p>'});
   }
   function tapCell(i){
     const p=puzzle;if(!p||p.done||!p.grid[i])return;
@@ -358,7 +389,7 @@
     const a=p.first;p.first=null;
     const hit=p.words.find(w=>!w.found&&((w.cells[0]===a&&w.cells.at(-1)===i)||(w.cells[0]===i&&w.cells.at(-1)===a)));
     if(hit){hit.found=true;tone('correct');addXP(5);advanceCard(S,hit.id,true);speak(C.cards[hit.id].en);
-      if(p.words.every(w=>w.found)){p.done=true;const secs=Math.min(3600,(Date.now()-p.start)/1000),d=dateKey();addXP(10);S.puzzles++;S.seconds+=secs;S.days[d].seconds+=secs;logSession('puzzle','',secs,p.words.length,0);tone('fanfare');confetti();}
+      if(p.words.every(w=>w.found)){p.done=true;const secs=Math.min(3600,(Date.now()-p.start)/1000),d=dateKey();addXP(10);S.puzzles++;S.seconds+=secs;S.days[d].seconds+=secs;logSession('puzzle','',secs,p.words.length,0);feedEgg(30);tone('fanfare');confetti();}
       save();
     } else if(a!==i)tone('wrong');
     renderPuzzle();
@@ -633,7 +664,7 @@ ${hard.length?`<section class="panel"><h2>Words to practice</h2><p class="muted"
     save();
     if(r.index>=r.queue.length)return completeRide();renderRide();goTop();
   }
-  function addXP(amount){S.xp+=amount;const d=dateKey();S.days[d]||={xp:0,rides:0,seconds:0};S.days[d].xp+=amount;}
+  function addXP(amount){const b=S.pets.buddy;if(b)S.pets.growth[b]=(S.pets.growth[b]||0)+amount;S.xp+=amount;const d=dateKey();S.days[d]||={xp:0,rides:0,seconds:0};S.days[d].xp+=amount;}
   function chooseReward(){
     const roll=Math.random(),unowned=stampList.filter(([id])=>!S.stamps.includes(id));
     if(roll<.45)return {type:'xp',amount:10+Math.floor(Math.random()*21)};
@@ -648,6 +679,7 @@ ${hard.length?`<section class="panel"><h2>Words to practice</h2><p class="muted"
     if(stop){S.stops[stop.id]=Math.max(S.stops[stop.id]||0,stars);const l=C.lines.find(l=>l.id===stop.lineId);if(l.stops.every(s=>S.stops[s.id])&&!S.stamps.includes(l.stamp))S.stamps.push(l.stamp);}
     const notice=completeDay(S,today);if(notice)S.notice=notice;
     S.rides++;S.seconds+=r.seconds;addXP(r.xp);S.days[today].rides++;S.days[today].seconds+=r.seconds;
+    feedEgg(40);
     logSession(r.free?'free':stop?'ride':r.stopId==='guide'?'guide':'review',r.free?.lineId||stop?.lineId||'',r.seconds,r.correct,r.mistakes);
     S.result={free:!!r.free,name:r.name,xp:r.xp,stars,words:Math.max(0,wordCount(S)-r.knownBefore),seconds:r.seconds,correct:r.correct,reward:chooseReward(),open:false,speedAvailable:S.rides%3===0,previousDay};
     S.active=null;save();tone('fanfare');renderResult();confetti();goTop();
@@ -657,7 +689,7 @@ ${hard.length?`<section class="panel"><h2>Words to practice</h2><p class="muted"
     const enc=C.ui.encourage[(S.rides-1)%C.ui.encourage.length];
     const stamp=r.reward.type==='stamp'?stampList.find(([id])=>id===r.reward.stamp):null;
     const rewardLabel=r.reward.type==='xp'?`+${r.reward.amount} bonus XP`:r.reward.type==='shield'?'A Streak Shield!':`${stamp?.[1]||'🛂'} ${r.reward.stamp} stamp!`;
-    layout(`<section class="result-screen"><div class="ticket-label">${r.free?'PRACTICE COMPLETE!':'STOP COMPLETE!'}</div><div class="celebration-stars" aria-label="${r.stars} of 3 stars">${[1,2,3].map(n=>`<span class="${n<=r.stars?'earned':''}">★</span>`).join('')}</div><h1>${r.free?'Look at you go!':'You’re going places!'}</h1><p>${esc(r.name)} · complete!<br>${am('ትምህርቱን ጨርሰሻል! በጣም ጎበዝ።')}</p>${r.free?'':'<div class="arrival-track"><span>●</span><i></i><span class="arriving-train">🚆</span><i></i><span>●</span></div>'}<div class="result-stats"><div><strong>+${r.xp}</strong><small>XP</small></div><div><strong>+${r.words}</strong><small>new ${r.words===1?'word':'words'}</small></div><div><strong>${Math.floor(r.seconds/60)}:${String(Math.floor(r.seconds%60)).padStart(2,'0')}</strong><small>time</small></div></div><div class="encouragement"><strong>${r.correct} answers practiced correctly. ${esc(enc[0])}</strong>${am(enc[1])}${r.previousDay?`<small>You rode ${r.previousDay} time${r.previousDay===1?'':'s'} yesterday. Today: ${daily().rides}.</small>`:''}</div><section class="chest-card ${r.open?'opened':''}"><span class="eyebrow">${r.open?'YOUR REWARD':'YOUR SURPRISE REWARD'}</span>${btn(`<span class="chest">${r.open?(r.reward.type==='shield'?'🛡️':r.reward.type==='xp'?'✦':stamp?.[1]||'🛂'):'🎁'}</span><strong>${r.open?esc(rewardLabel):'Tap to open your reward'}</strong>`,'chest','chest-button',r.open?'disabled':'')}${r.open?'<p>Earned by showing up for yourself.</p>':''}</section></section>`,'You did it!',null,{nav:false,mode:'result',footer:r.open?primary('Back to my journey →','result-done')+(r.speedAvailable?btn('⚡ 45-second speed round','speed-start','button secondary'):''):primary('🎁 Open my surprise','chest')});
+    layout(`<section class="result-screen"><div class="ticket-label">${r.free?'PRACTICE COMPLETE!':'STOP COMPLETE!'}</div><div class="celebration-stars" aria-label="${r.stars} of 3 stars">${[1,2,3].map(n=>`<span class="${n<=r.stars?'earned':''}">★</span>`).join('')}</div><h1>${r.free?'Look at you go!':'You’re going places!'}</h1><p>${esc(r.name)} · complete!<br>${am('ትምህርቱን ጨርሰሻል! በጣም ጎበዝ።')}</p>${r.free?'':'<div class="arrival-track"><span>●</span><i></i><span class="arriving-train">🚆</span><i></i><span>●</span></div>'}<div class="result-stats"><div><strong>+${r.xp}</strong><small>XP</small></div><div><strong>+${r.words}</strong><small>new ${r.words===1?'word':'words'}</small></div><div><strong>${Math.floor(r.seconds/60)}:${String(Math.floor(r.seconds%60)).padStart(2,'0')}</strong><small>time</small></div></div><div class="encouragement"><strong>${r.correct} answers practiced correctly. ${esc(enc[0])}</strong>${am(enc[1])}${r.previousDay?`<small>You rode ${r.previousDay} time${r.previousDay===1?'':'s'} yesterday. Today: ${daily().rides}.</small>`:''}</div><div class="result-egg">${S.pets.hatch?'<strong>🥚 Your egg is ready to hatch!</strong>':eggBar()}</div><section class="chest-card ${r.open?'opened':''}"><span class="eyebrow">${r.open?'YOUR REWARD':'YOUR SURPRISE REWARD'}</span>${btn(`<span class="chest">${r.open?(r.reward.type==='shield'?'🛡️':r.reward.type==='xp'?'✦':stamp?.[1]||'🛂'):'🎁'}</span><strong>${r.open?esc(rewardLabel):'Tap to open your reward'}</strong>`,'chest','chest-button',r.open?'disabled':'')}${r.open?'<p>Earned by showing up for yourself.</p>':''}</section></section>`,'You did it!',null,{nav:false,mode:'result',footer:r.open?primary('Back to my journey →','result-done')+(r.speedAvailable?btn('⚡ 45-second speed round','speed-start','button secondary'):''):primary('🎁 Open my surprise','chest')});
   }
   function openChest(){
     const r=S.result;if(!r||r.open)return;
@@ -667,7 +699,35 @@ ${hard.length?`<section class="panel"><h2>Words to practice</h2><p class="muted"
     if(r.reward.type==='stamp'&&!S.stamps.includes(r.reward.stamp))S.stamps.push(r.reward.stamp);
     save();tone('fanfare');renderResult();confetti();
   }
-  function finishResult(){const free=S.result?.free;S.result=null;save();checkLevel(()=>{if(free){renderHome();return goTop();}renderMap();goTop();document.getElementById('current-station')?.classList.add('new-station');});}
+  function finishResult(){
+    const free=S.result?.free;S.result=null;save();
+    const next=()=>checkLevel(()=>{if(free){renderHome();return goTop();}renderMap();goTop();document.getElementById('current-station')?.classList.add('new-station');});
+    if(S.pets.hatch){hatchReturn=next;renderHatch();return goTop();}
+    next();
+  }
+  function renderHatch(){
+    const id=S.pets.hatch;if(!id)return renderHome();screen='hatch';
+    const [,en,amName,rarity]=petById[id],count=S.pets.owned[id],buddyNew=S.pets.buddy===id&&count===1&&Object.keys(S.pets.owned).length===1;
+    layout(`<section class="hatch-screen rarity-${rarity}"><span class="ticket-label">${count>1?'ANOTHER ONE!':'A NEW PET!'}</span>${petImg(id,'hatch-pop')}<span class="rarity-tag">${rarity.toUpperCase()}</span><h1>${esc(en)}</h1>${am(amName)}${btn('🔊 Listen','speak','button secondary',`data-text="${esc(en)}"`)}<p>${count>1?`You have ${count} of these now.`:buddyNew?'Your first pet! It will grow as you learn. Give it a name.':'Added to your pet family.'}</p></section>`,'A new friend',null,{nav:false,footer:primary(buddyNew?'Meet my pet →':'Continue →','hatch-done')});
+    tone('fanfare');confetti();
+  }
+  function eggBar(){return `<span class="egg-bar"><span aria-hidden="true">🥚</span><span class="egg-track"><i style="width:${S.pets.egg}%"></i></span><small>${S.pets.egg}/100</small></span>`;}
+  function petStrip(){
+    const p=S.pets,b=p.buddy;
+    if(p.hatch)return btn(`<span class="pet-strip-egg" aria-hidden="true">🥚</span><span class="grow"><strong>Your egg is hatching!</strong><small>Tap to see who it is.</small>${am('እንቁላልሽ እየተፈለፈለ ነው!')}</span>`,'hatch','pet-strip hatching');
+    if(!b)return btn(`<span class="pet-strip-egg" aria-hidden="true">🥚</span><span class="grow"><strong>Your first pet is coming!</strong><small>Finish a lesson or a word search to fill the egg.</small>${eggBar()}</span>`,'pets','pet-strip');
+    return btn(`${petImg(b,'stage-'+petStage(b))}<span class="grow"><strong>${esc(petName(b))}</strong><small>${PET_STAGES[petStage(b)][1]} · ${Object.keys(p.owned).length} of ${PETS.length} pets</small>${eggBar()}</span>`,'pets','pet-strip');
+  }
+  function renderPets(){
+    screen='pets';const p=S.pets,b=p.buddy,owned=Object.keys(p.owned).length;
+    let html=`<section class="page-intro"><span class="eyebrow">MY PETS · ${owned} / ${PETS.length}</span><h1>Your<br><em>pet family.</em></h1><p>Every lesson fills your egg. A full egg hatches a new friend.</p>${am('እያንዳንዱ ትምህርት እንቁላሉን ይሞላል።')}</section>`;
+    if(petView&&p.owned[petView]){const [id,en,amName,r]=petById[petView];html+=`<section class="panel pet-detail rarity-${r}">${petImg(id)}<span class="rarity-tag">${r.toUpperCase()}</span><h2>${esc(en)}</h2>${am(amName)}<p class="muted">You have ${p.owned[id]}.</p><div class="pet-actions">${btn('🔊 Listen','speak','button secondary',`data-text="${esc(en)}"`)}${id!==b?btn('❤️ Make my buddy','pet-buddy','button primary',`data-id="${id}"`):''}</div></section>`;}
+    if(b){const si=petStage(b),g=p.growth[b]||0,next=PET_STAGES[si+1];
+      html+=`<section class="panel buddy-panel">${petImg(b,'stage-'+si)}<span class="eyebrow">YOUR BUDDY · ${PET_STAGES[si][1].toUpperCase()}</span><label for="pet-name">Its name</label><input id="pet-name" type="text" maxlength="24" autocomplete="off" spellcheck="false" value="${esc(petName(b))}"><p class="muted">${next?`${Math.ceil(next[0]-g)} more XP until it is ${next[1].toLowerCase()}. Every lesson helps it grow.`:'Your best friend forever!'}</p>${next?`<div class="league-track"><i style="width:${(g-PET_STAGES[si][0])/(next[0]-PET_STAGES[si][0])*100}%"></i></div>`:''}</section>`;}
+    html+=`<section class="panel"><h2>🥚 Your egg</h2><p class="muted">A lesson adds 40. A word search adds 30.</p><div class="league-track"><i style="width:${p.egg}%"></i></div><p>${p.egg} / 100</p>${p.hatch?primary('🥚 Hatch it now!','hatch'):''}</section>`;
+    html+=`<div class="rarity-legend"><span class="rarity-common">Common</span><span class="rarity-rare">Rare</span><span class="rarity-epic">Epic</span><span class="rarity-legendary">Legendary</span></div><div class="pet-grid">${PETS.map(([id,en,,r])=>p.owned[id]?btn(`${petImg(id)}<small>${esc(en)}</small>`,'pet-view',`pet-card rarity-${r}${id===b?' is-buddy':''}`,`data-id="${id}"`):`<div class="pet-card locked rarity-${r}">${petImg(id,'silhouette')}<small>?</small></div>`).join('')}</div>`;
+    layout(html,'My pets','home');
+  }
   function checkLevel(next){
     const l=levelFor(S.xp);if(l<=S.levelSeen)return next();S.levelSeen=l;save();screen='level';levelReturn=next;tone('fanfare');
     layout(`<section class="level-moment"><span class="ticket-label">YOU’RE MOVING FORWARD</span><div>${LEVELS[l][2]}</div><p>Level ${l+1}</p><h1>Hello,<br><em>${LEVELS[l][1]}.</em></h1><p>Your practice brought you here.</p>${am('እንግሊዝኛሽ እየተሻሻለ ነው። በጣም ጎበዝ።')}</section>`,'A new chapter',null,{nav:false,footer:primary('Keep going →','level-done')});confetti();
@@ -743,6 +803,7 @@ ${hard.length?`<section class="panel"><h2>Words to practice</h2><p class="muted"
   function pauseRide(){stopMedia();save();renderHome();goTop();}
   let restoreCandidate=null;
   root.addEventListener('input',e=>{
+    if(e.target.id==='pet-name'&&S.pets.buddy){S.pets.names[S.pets.buddy]=e.target.value.trim().slice(0,24);save();return;}
     if(e.target.id==='typed-answer'&&S.active&&!S.active.feedback){S.active.draft.typed=e.target.value;save();const b=root.querySelector('[data-action="check-type"]');if(b)b.disabled=!e.target.value.trim();}
   });
   root.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='typed-answer'){e.preventDefault();root.querySelector('[data-action="check-type"]:not(:disabled)')?.click();}});
@@ -759,6 +820,11 @@ ${hard.length?`<section class="panel"><h2>Words to practice</h2><p class="muted"
     if(a==='puzzle'){makePuzzle();renderPuzzle();return goTop();}
     if(a==='cell')return tapCell(index);
     if(a==='progress'){renderProgress();return goTop();}
+    if(a==='pets'){petView=null;renderPets();return goTop();}
+    if(a==='hatch'){renderHatch();return goTop();}
+    if(a==='hatch-done'){const id=S.pets.hatch,first=id&&S.pets.owned[id]===1&&Object.keys(S.pets.owned).length===1;S.pets.hatch=null;save();const next=hatchReturn;hatchReturn=null;if(next&&!first)return next();petView=null;renderPets();return goTop();}
+    if(a==='pet-view'){petView=b.dataset.id;renderPets();speak(petById[petView]?.[1]||'');return goTop();}
+    if(a==='pet-buddy'&&S.pets.owned[b.dataset.id]){S.pets.buddy=b.dataset.id;petView=null;save();renderPets();toast(`${petName(S.pets.buddy)} is your buddy now!`);return goTop();}
     if(a==='home')return pauseRide();
     if(a==='words'){renderWords();return goTop();}
     if(a==='me'){renderMe();return goTop();}

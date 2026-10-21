@@ -526,3 +526,42 @@ hr { border:0; border-top:1px solid var(--line); margin:25px 0; }
 .heatmap { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:6px; margin-top:14px; }
 .heatmap i { aspect-ratio:1; border-radius:7px; background:color-mix(in srgb,var(--leaf) calc(var(--level)*100%),var(--surface-2)); }
 .heatmap i.today { outline:2px solid var(--madder); outline-offset:1px; }
+/* Pets (10-20) */
+.pet-img { display:block; width:72px; height:72px; object-fit:contain; -webkit-user-drag:none; }
+.pet-img.stage-0 { width:58px; height:58px; } .pet-img.stage-1 { width:68px; height:68px; } .pet-img.stage-2 { width:78px; height:78px; } .pet-img.stage-3 { width:86px; height:86px; filter:drop-shadow(0 0 6px var(--saffron)); }
+.pet-strip { width:100%; display:flex; align-items:center; gap:14px; text-align:left; padding:13px 16px; margin:16px 0 4px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); box-shadow:var(--shadow); }
+.pet-strip strong { display:block; font-size:17px; }
+.pet-strip small { display:block; color:var(--muted); font-size:12px; }
+.pet-strip-egg { font-size:44px; width:72px; text-align:center; }
+.pet-strip.hatching .pet-strip-egg { animation:eggWobble 1s ease-in-out infinite; }
+.egg-bar { display:flex; align-items:center; gap:8px; margin-top:7px; }
+.egg-bar small { font-size:12px; color:var(--muted); white-space:nowrap; }
+.egg-track { flex:1; height:10px; border-radius:6px; background:var(--surface-2); overflow:hidden; }
+.egg-track i { display:block; height:100%; background:var(--saffron); border-radius:6px; }
+.result-egg { margin:16px auto 0; max-width:300px; }
+.hatch-screen { text-align:center; padding:30px 0 0; }
+.hatch-screen .pet-img { width:210px; height:210px; margin:22px auto 8px; }
+.hatch-pop { animation:hatchPop .7s cubic-bezier(.2,1.6,.4,1) both; }
+.hatch-screen h1 { margin-top:10px; }
+.hatch-screen .button { margin:14px auto 0; max-width:220px; }
+.rarity-tag { display:inline-block; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:800; letter-spacing:1.5px; background:var(--rarity); color:#fff; }
+.rarity-common { --rarity:#7E8C7A; } .rarity-rare { --rarity:#3E7FB0; } .rarity-epic { --rarity:#8A4FB5; } .rarity-legendary { --rarity:#C98A18; }
+.buddy-panel { text-align:center; }
+.buddy-panel .pet-img { margin:0 auto 10px; width:100px; height:100px; } .buddy-panel .pet-img.stage-1 { width:120px; height:120px; } .buddy-panel .pet-img.stage-2 { width:140px; height:140px; } .buddy-panel .pet-img.stage-3 { width:160px; height:160px; }
+.buddy-panel label { text-align:left; }
+.pet-detail { text-align:center; border-color:var(--rarity); }
+.pet-detail .pet-img { width:150px; height:150px; margin:0 auto 10px; }
+.pet-actions { display:grid; gap:10px; margin-top:12px; }
+.rarity-legend { display:flex; flex-wrap:wrap; gap:12px; margin:22px 0 10px; font-size:12px; font-weight:700; color:var(--muted); }
+.rarity-legend span::before { content:''; display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--rarity); margin-right:5px; vertical-align:-1px; }
+.pet-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; margin-bottom:20px; }
+.pet-card { display:flex; flex-direction:column; align-items:center; gap:2px; padding:8px 4px 7px; border:2px solid var(--rarity); border-radius:16px; background:var(--surface); min-width:0; }
+.pet-card .pet-img { width:100%; height:auto; aspect-ratio:1; }
+.pet-card small { font-size:11px; font-weight:700; text-align:center; line-height:1.2; overflow-wrap:anywhere; }
+.pet-card.is-buddy { background:var(--madder-soft); }
+.pet-card.locked { border-style:dashed; opacity:.75; }
+.pet-img.silhouette { filter:brightness(0); opacity:.18; }
+@media (prefers-color-scheme:dark) { .pet-img.silhouette { filter:brightness(0) invert(1); opacity:.13; } }
+@keyframes eggWobble { 0%,100% { transform:rotate(0); } 25% { transform:rotate(-12deg); } 75% { transform:rotate(12deg); } }
+@keyframes hatchPop { from { transform:scale(.2) rotate(-20deg); opacity:0; } to { transform:none; opacity:1; } }
+@media (prefers-reduced-motion:reduce) { .hatch-pop,.pet-strip.hatching .pet-strip-egg { animation:none; } }
